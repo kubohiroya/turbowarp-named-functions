@@ -1,0 +1,133 @@
+{
+  "formatVersion": 1,
+  "id": "kubohiroyanamedfunctions",
+  "blocks": [
+    {
+      "opcode": "awaitAll",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "PROMISES",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "awaitResult",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "PROMISE",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "callFunction",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "ARGS",
+          "type": "STRING"
+        },
+        {
+          "id": "NAME",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "defineFunction",
+      "blockType": "HAT",
+      "arguments": [
+        {
+          "id": "DESCRIPTION",
+          "type": "STRING"
+        },
+        {
+          "id": "EXPORT",
+          "type": "STRING",
+          "menu": "exportModes"
+        },
+        {
+          "id": "NAME",
+          "type": "STRING"
+        },
+        {
+          "id": "SCHEMA",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "functionArgument",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "PATH",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "functionArgumentsJson",
+      "blockType": "REPORTER",
+      "arguments": []
+    },
+    {
+      "opcode": "isDefined",
+      "blockType": "BOOLEAN",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "isSettled",
+      "blockType": "BOOLEAN",
+      "arguments": [
+        {
+          "id": "PROMISE",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "lastError",
+      "blockType": "REPORTER",
+      "arguments": []
+    },
+    {
+      "opcode": "returnValue",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "VALUE",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "startFunction",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "ARGS",
+          "type": "STRING"
+        },
+        {
+          "id": "NAME",
+          "type": "STRING"
+        }
+      ]
+    }
+  ],
+  "menus": [
+    {
+      "id": "exportModes",
+      "acceptReporters": false
+    }
+  ]
+}

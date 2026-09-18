@@ -1,0 +1,168 @@
+{
+  "extensionName": "Named Functions",
+  "blocks": [
+    {
+      "opcode": "defineFunction",
+      "blockType": "HAT",
+      "text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] export as [EXPORT]",
+      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. export as tool marks it for consumers such as AI tool calling.",
+      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。export asをtoolにすると、AIのツール呼び出しなどの利用側に公開する印になります。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "add"
+        },
+        "DESCRIPTION": {
+          "type": "STRING",
+          "defaultValue": "Adds two numbers."
+        },
+        "SCHEMA": {
+          "type": "STRING",
+          "defaultValue": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"a\",\"b\"]}"
+        },
+        "EXPORT": {
+          "type": "STRING",
+          "defaultValue": "none",
+          "menu": "exportModes"
+        }
+      }
+    },
+    {
+      "opcode": "functionArgument",
+      "blockType": "REPORTER",
+      "text": "function argument [PATH]",
+      "description": "Inside a function, reports the argument at a dotted path such as a or items.0.name.",
+      "descriptionJa": "関数の中で、aやitems.0.nameのようなドット区切りのパスにある引数を返します。",
+      "arguments": {
+        "PATH": {
+          "type": "STRING",
+          "defaultValue": "a"
+        }
+      }
+    },
+    {
+      "opcode": "functionArgumentsJson",
+      "blockType": "REPORTER",
+      "text": "function arguments JSON",
+      "description": "Inside a function, reports all arguments as JSON text.",
+      "descriptionJa": "関数の中で、すべての引数をJSONテキストとして返します。",
+      "arguments": {}
+    },
+    {
+      "opcode": "returnValue",
+      "blockType": "COMMAND",
+      "text": "return [VALUE]",
+      "description": "Inside a function, returns a value and ends the script. JSON text is returned as JSON; other text is returned as a string.",
+      "descriptionJa": "関数の中で値を返し、スクリプトを終了します。JSONテキストはJSONとして、それ以外のテキストは文字列として返します。",
+      "arguments": {
+        "VALUE": {
+          "type": "STRING",
+          "defaultValue": "0"
+        }
+      }
+    },
+    {
+      "opcode": "callFunction",
+      "blockType": "REPORTER",
+      "text": "call function [NAME] with [ARGS]",
+      "description": "Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.",
+      "descriptionJa": "関数を呼び出し、結果を待って返します。ARGSはJSONテキストで、args schemaで検査されます。少なくとも1フレームかかります。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "add"
+        },
+        "ARGS": {
+          "type": "STRING",
+          "defaultValue": "{\"a\":1,\"b\":2}"
+        }
+      }
+    },
+    {
+      "opcode": "startFunction",
+      "blockType": "REPORTER",
+      "text": "start function [NAME] with [ARGS]",
+      "description": "Starts a function without waiting and reports a promise reference as JSON text.",
+      "descriptionJa": "関数を待たずに開始し、Promiseへの参照をJSONテキストで返します。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "add"
+        },
+        "ARGS": {
+          "type": "STRING",
+          "defaultValue": "{\"a\":1,\"b\":2}"
+        }
+      }
+    },
+    {
+      "opcode": "awaitResult",
+      "blockType": "REPORTER",
+      "text": "await [PROMISE]",
+      "description": "Waits for a promise reference from start function and reports its result.",
+      "descriptionJa": "start functionが返したPromiseへの参照を待ち、その結果を返します。",
+      "arguments": {
+        "PROMISE": {
+          "type": "STRING",
+          "defaultValue": "{\"$promise\":\"p_1\"}"
+        }
+      }
+    },
+    {
+      "opcode": "awaitAll",
+      "blockType": "REPORTER",
+      "text": "await all [PROMISES]",
+      "description": "Waits for a JSON array of promise references and reports a JSON array of results. Failed calls become {\"$error\": message}.",
+      "descriptionJa": "Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返します。失敗した呼び出しは{\"$error\": メッセージ}になります。",
+      "arguments": {
+        "PROMISES": {
+          "type": "STRING",
+          "defaultValue": "[]"
+        }
+      }
+    },
+    {
+      "opcode": "isSettled",
+      "blockType": "BOOLEAN",
+      "text": "[PROMISE] settled?",
+      "description": "Reports whether a started function has finished, without waiting.",
+      "descriptionJa": "開始した関数が終わったかを、待たずに返します。",
+      "arguments": {
+        "PROMISE": {
+          "type": "STRING",
+          "defaultValue": "{\"$promise\":\"p_1\"}"
+        }
+      }
+    },
+    {
+      "opcode": "isDefined",
+      "blockType": "BOOLEAN",
+      "text": "function [NAME] defined?",
+      "description": "Reports whether a valid define function hat with this name exists.",
+      "descriptionJa": "この名前の正しいdefine functionハットがあるかを返します。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "add"
+        }
+      }
+    },
+    {
+      "opcode": "lastError",
+      "blockType": "REPORTER",
+      "text": "last function error",
+      "description": "Reports the most recent function error, or an empty string.",
+      "descriptionJa": "直近の関数のエラーを返します。エラーがなければ空文字列を返します。",
+      "arguments": {}
+    }
+  ],
+  "menus": {
+    "exportModes": {
+      "acceptReporters": false,
+      "items": [
+        "none",
+        "tool"
+      ]
+    }
+  }
+}
