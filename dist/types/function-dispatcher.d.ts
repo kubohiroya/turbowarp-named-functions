@@ -40,7 +40,7 @@ export declare class FunctionDispatcher {
      * Starts a named function. `caller` is the thread of the block making the call, if any; it is used
      * to detect reentrant calls.
      */
-    invoke(name: string, args: unknown, caller?: RuntimeThread): Promise<unknown>;
+    invoke(name: string, args: unknown, caller?: RuntimeThread, returnSchema?: unknown): Promise<unknown>;
     /** Hat predicate: true only for the script that should run the invocation being started. */
     matchHat(name: string, thread: RuntimeThread | undefined): boolean;
     argumentsFor(thread: RuntimeThread | undefined): unknown;
@@ -51,6 +51,7 @@ export declare class FunctionDispatcher {
     private pump;
     private afterStep;
     private settle;
+    private settleWithValue;
 }
 /** Resolves a dotted path such as `items.0.name` inside parsed JSON arguments. */
 export declare function readArgumentPath(args: unknown, path: string): unknown;

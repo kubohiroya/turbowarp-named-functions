@@ -126,7 +126,7 @@ class NamedFunctionsImpl implements NamedFunctions {
     if (errors.length > 0) {
       return Promise.reject(new Error(`Invalid arguments for ${trimmed}: ${errors.join('; ')}`));
     }
-    return this.dispatcher.invoke(trimmed, args, options.caller);
+    return this.dispatcher.invoke(trimmed, args, options.caller, definition.returns);
   }
 
   public start(name: string, args: unknown, options: CallOptions = {}): PromiseRef {

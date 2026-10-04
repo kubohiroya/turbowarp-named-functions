@@ -45,9 +45,10 @@ export interface FunctionHatSpec {
   name: string;
   description?: string;
   schema?: string;
+  returns?: string;
   exportAs?: 'tool' | 'none';
   /** Use a reporter block instead of literal text for this input. */
-  reporterInput?: 'NAME' | 'DESCRIPTION' | 'SCHEMA';
+  reporterInput?: 'NAME' | 'DESCRIPTION' | 'SCHEMA' | 'RETURNS';
 }
 
 /** Builds a target whose blocks container holds `define function` hats as the VM serializes them. */
@@ -65,6 +66,7 @@ export function targetWithFunctions(
       DESCRIPTION: spec.description ?? `Description of ${spec.name}`,
       SCHEMA: spec.schema ?? '{"type":"object","properties":{}}'
     };
+    if (spec.returns !== undefined) Object.assign(values, {RETURNS: spec.returns});
     for (const [inputName, value] of Object.entries(values)) {
       const shadowId = `${hatId}_${inputName}`;
       blocks[shadowId] = {id: shadowId, opcode: 'text', shadow: true, topLevel: false, fields: {TEXT: {value}}};

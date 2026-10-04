@@ -54,6 +54,10 @@
           "type": "STRING"
         },
         {
+          "id": "RETURNS",
+          "type": "STRING"
+        },
+        {
           "id": "SCHEMA",
           "type": "STRING"
         }

@@ -31,6 +31,21 @@ describe('scanFunctionDefinitions', () => {
     ]);
   });
 
+  it('reads an optional return schema and accepts non-object schema types', () => {
+    const scan = scanFunctionDefinitions(
+      [targetWithFunctions(OPCODE, [{name: 'count', returns: '{"type":"integer","minimum":0}'}])],
+      OPCODE
+    );
+    expect(scan.errors).toEqual([]);
+    expect(scan.functions[0]?.returns).toEqual({type: 'integer', minimum: 0});
+  });
+
+  it('reports malformed return schemas', () => {
+    const scan = scanFunctionDefinitions([targetWithFunctions(OPCODE, [{name: 'count', returns: '{'}])], OPCODE);
+    expect(scan.functions).toEqual([]);
+    expect(scan.errors[0]).toContain('returns schema must be valid JSON');
+  });
+
   it.each([
     [{name: 'bad name'}, 'function name'],
     [{name: 'a', schema: 'not json'}, 'valid JSON'],
