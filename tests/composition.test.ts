@@ -11,7 +11,9 @@ function setup(maxInFlight?: number) {
     targetWithFunctions(OPCODE, [
       {name: 'add', schema: ADD_SCHEMA, exportAs: 'tool'},
       {name: 'secret', exportAs: 'none'},
-      {name: 'slow'}
+      {name: 'slow'},
+      {name: 'typed', exportAs: 'none', returns: '{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]}'},
+      {name: 'count', exportAs: 'none', returns: '{"type":"integer","minimum":0}'}
     ])
   ];
   const functions = createNamedFunctions({
@@ -55,6 +57,26 @@ describe('createNamedFunctions', () => {
     expect(functions.argumentsFor(thread)).toEqual({a: 1, b: 2});
     functions.returnFrom(thread, 3);
     await expect(result).resolves.toBe(3);
+  });
+
+  it('validates return values with the shared schema validator and reports paths', async () => {
+    const {functions, run} = setup();
+    const result = functions.call('typed', {});
+    functions.returnFrom(run('typed'), {ok: 'yes'});
+    await expect(result).rejects.toThrow('Invalid return value for typed: $.ok must be boolean');
+  });
+
+  it('validates an implicit null return and leaves untyped legacy functions unchanged', async () => {
+    const {runtime, functions, run} = setup();
+    const typed = functions.call('count', {});
+    runtime.endThread(run('count'));
+    runtime.step();
+    await expect(typed).rejects.toThrow('Invalid return value for count: $ must be integer');
+
+    const legacy = functions.call('slow', {});
+    runtime.endThread(run('slow'));
+    runtime.step();
+    await expect(legacy).resolves.toBeNull();
   });
 
   it('refuses unexported functions when exportedOnly is set', async () => {

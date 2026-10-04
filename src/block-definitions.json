@@ -4,9 +4,9 @@
     {
       "opcode": "defineFunction",
       "blockType": "HAT",
-      "text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] export as [EXPORT]",
-      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. export as tool marks it for consumers such as AI tool calling.",
-      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。export asをtoolにすると、AIのツール呼び出しなどの利用側に公開する印になります。",
+      "text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
+      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.",
+      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。RETURNSには任意の戻り値JSON Schemaを指定でき、空欄なら戻り値を検証しません。",
       "arguments": {
         "NAME": {
           "type": "STRING",
@@ -19,6 +19,10 @@
         "SCHEMA": {
           "type": "STRING",
           "defaultValue": "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"a\",\"b\"]}"
+        },
+        "RETURNS": {
+          "type": "STRING",
+          "defaultValue": ""
         },
         "EXPORT": {
           "type": "STRING",

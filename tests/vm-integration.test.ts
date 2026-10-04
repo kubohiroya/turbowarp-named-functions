@@ -66,6 +66,11 @@ function buildProject() {
   });
   add('loopReturn', {opcode: `${ID}_returnValue`, parent: 'loop', inputs: {VALUE: [3, 'loopJoin', [10, '']]}});
 
+  // badReturn: return text against a numeric return schema
+  define('badReturnFn', 'badReturn', '{"type":"object"}', 'badReturn');
+  blocks.badReturnFn!.inputs = {...(blocks.badReturnFn!.inputs as Record<string, unknown>), RETURNS: [1, [10, '{"type":"number"}']]};
+  add('badReturn', {opcode: `${ID}_returnValue`, parent: 'badReturnFn', inputs: {VALUE: [1, [10, 'wrong']]}});
+
   const base = {
     variables: {},
     lists: {},
@@ -94,6 +99,7 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
     callFunction(args: Record<string, unknown>): Promise<unknown>;
     startFunction(args: Record<string, unknown>): string;
     awaitAll(args: Record<string, unknown>): Promise<string>;
+    lastError(): string;
   };
 
   beforeAll(async () => {
@@ -132,6 +138,11 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
 
   it('reports reentrant calls instead of deadlocking', async () => {
     await expect(extension.callFunction({NAME: 'loop', ARGS: '{}'})).resolves.toContain('Reentrant call: loop -> loop');
+  });
+
+  it('rejects a return value that does not match its return schema', async () => {
+    await expect(extension.callFunction({NAME: 'badReturn', ARGS: '{}'})).resolves.toBe('');
+    expect(extension.lastError()).toContain('Invalid return value for badReturn: $ must be number');
   });
 
   it('starts several calls and awaits them all', async () => {

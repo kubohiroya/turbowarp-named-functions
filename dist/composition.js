@@ -1,3 +1,65 @@
+//#region src/schema-validator.ts
+/**
+* A small JSON Schema validator for function arguments. It interprets the schema at run time and
+* never generates code, so it also works where `eval` is unavailable (for example Cloudflare Workers).
+*
+* Supported keywords: type, properties, required, additionalProperties (boolean), items, enum,
+* const, minimum, maximum, minLength, maxLength, minItems, maxItems. Other keywords, such as
+* description and title, are ignored.
+*/
+function validateAgainstSchema(value, schema, path = "$") {
+	const rule = asRecord(schema);
+	if (!rule) return [];
+	const errors = [];
+	if (rule.type !== void 0) {
+		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
+		if (!types.some((type) => matchesType(value, type))) return [`${path} must be ${types.join(" or ")}`];
+	}
+	if (Array.isArray(rule.enum) && !rule.enum.some((candidate) => deepEqual(candidate, value))) errors.push(`${path} must be one of ${rule.enum.map((item) => JSON.stringify(item)).join(", ")}`);
+	if ("const" in rule && !deepEqual(rule.const, value)) errors.push(`${path} must be ${JSON.stringify(rule.const)}`);
+	if (typeof value === "number") {
+		if (typeof rule.minimum === "number" && value < rule.minimum) errors.push(`${path} must be >= ${rule.minimum}`);
+		if (typeof rule.maximum === "number" && value > rule.maximum) errors.push(`${path} must be <= ${rule.maximum}`);
+	}
+	if (typeof value === "string") {
+		const length = [...value].length;
+		if (typeof rule.minLength === "number" && length < rule.minLength) errors.push(`${path} must have at least ${rule.minLength} characters`);
+		if (typeof rule.maxLength === "number" && length > rule.maxLength) errors.push(`${path} must have at most ${rule.maxLength} characters`);
+	}
+	if (Array.isArray(value)) {
+		if (typeof rule.minItems === "number" && value.length < rule.minItems) errors.push(`${path} must have at least ${rule.minItems} items`);
+		if (typeof rule.maxItems === "number" && value.length > rule.maxItems) errors.push(`${path} must have at most ${rule.maxItems} items`);
+		if (rule.items !== void 0) value.forEach((item, index) => errors.push(...validateAgainstSchema(item, rule.items, `${path}[${index}]`)));
+	}
+	const object = asRecord(value);
+	if (object) {
+		const properties = asRecord(rule.properties) ?? {};
+		if (Array.isArray(rule.required)) {
+			for (const name of rule.required) if (typeof name === "string" && !(name in object)) errors.push(`${path}.${name} is required`);
+		}
+		for (const [name, child] of Object.entries(object)) if (name in properties) errors.push(...validateAgainstSchema(child, properties[name], `${path}.${name}`));
+		else if (rule.additionalProperties === false) errors.push(`${path}.${name} is not allowed`);
+	}
+	return errors;
+}
+function matchesType(value, type) {
+	switch (type) {
+		case "object": return asRecord(value) !== null;
+		case "array": return Array.isArray(value);
+		case "string": return typeof value === "string";
+		case "number": return typeof value === "number" && Number.isFinite(value);
+		case "integer": return typeof value === "number" && Number.isInteger(value);
+		case "boolean": return typeof value === "boolean";
+		case "null": return value === null;
+		default: return false;
+	}
+}
+function deepEqual(left, right) {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+function asRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
 var FunctionDispatcher = class {
 	constructor(runtime, options) {
 		this.runtime = runtime;
@@ -19,7 +81,7 @@ var FunctionDispatcher = class {
 	* Starts a named function. `caller` is the thread of the block making the call, if any; it is used
 	* to detect reentrant calls.
 	*/
-	invoke(name, args, caller) {
+	invoke(name, args, caller, returnSchema) {
 		if (!this.options.knownNames().has(name)) return Promise.reject(/* @__PURE__ */ new Error(`Unknown function: ${name}`));
 		const parentChain = caller ? this.byThread.get(caller)?.chain ?? [] : [];
 		if (parentChain.includes(name)) return Promise.reject(/* @__PURE__ */ new Error(`Reentrant call: ${[...parentChain, name].join(" -> ")}. Use a custom block for recursion.`));
@@ -27,6 +89,7 @@ var FunctionDispatcher = class {
 			const invocation = {
 				name,
 				args,
+				...returnSchema === void 0 ? {} : { returnSchema },
 				chain: [...parentChain, name],
 				resolve,
 				reject,
@@ -57,7 +120,7 @@ var FunctionDispatcher = class {
 	returnFrom(thread, value) {
 		const invocation = thread ? this.byThread.get(thread) : void 0;
 		if (!invocation) throw new Error("return can only be used inside a running function.");
-		this.settle(invocation, null, value);
+		this.settleWithValue(invocation, value);
 	}
 	cancelAll(reason) {
 		for (const invocation of [...this.queue, ...this.running.values()]) this.settle(invocation, new Error(reason));
@@ -86,7 +149,7 @@ var FunctionDispatcher = class {
 		this.step += 1;
 		const starting = this.starting;
 		if (starting && this.step - starting.startedAtStep > 2) this.settle(starting, /* @__PURE__ */ new Error(`Function ${starting.name} did not start. Is its script already running?`));
-		for (const invocation of this.running.values()) if (invocation.thread && !this.runtime.threads.includes(invocation.thread)) this.settle(invocation, null, null);
+		for (const invocation of this.running.values()) if (invocation.thread && !this.runtime.threads.includes(invocation.thread)) this.settleWithValue(invocation, null);
 		this.pump();
 	}
 	settle(invocation, error, value) {
@@ -100,6 +163,16 @@ var FunctionDispatcher = class {
 		if (this.starting === invocation) this.starting = null;
 		if (error) invocation.reject(error);
 		else invocation.resolve(value);
+	}
+	settleWithValue(invocation, value) {
+		if (invocation.returnSchema !== void 0) {
+			const errors = validateAgainstSchema(value, invocation.returnSchema);
+			if (errors.length > 0) {
+				this.settle(invocation, /* @__PURE__ */ new Error(`Invalid return value for ${invocation.name}: ${errors.join("; ")}`));
+				return;
+			}
+		}
+		this.settle(invocation, null, value);
 	}
 };
 /** Resolves a dotted path such as `items.0.name` inside parsed JSON arguments. */
@@ -178,17 +251,24 @@ function readDefinition(block, blocks, targetName) {
 	if (!FUNCTION_NAME_PATTERN.test(name)) throw new Error("function name must be 1-64 letters, digits, \"_\" or \"-\"");
 	const description = readLiteralInput(block, blocks, "DESCRIPTION").trim();
 	if (description.length > 1024) throw new Error(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
-	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"));
+	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"), "args schema", true);
+	const returnsText = readOptionalLiteralInput(block, blocks, "RETURNS");
+	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false);
 	const exportAs = String(block.fields?.EXPORT?.value ?? "none") === "tool" ? "tool" : "none";
 	if (exportAs === "tool" && description.length === 0) throw new Error("a function exported as a tool needs a description");
 	return {
 		name,
 		description,
 		parameters,
+		...returns ? { returns } : {},
 		exportAs,
 		targetName,
 		blockId: block.id
 	};
+}
+function readOptionalLiteralInput(block, blocks, inputName) {
+	if (!block.inputs?.[inputName]) return void 0;
+	return readLiteralInput(block, blocks, inputName);
 }
 function readLiteralInput(block, blocks, inputName) {
 	const input = block.inputs?.[inputName];
@@ -200,80 +280,17 @@ function readLiteralInput(block, blocks, inputName) {
 	if (!field) throw new Error(`${inputName} is missing`);
 	return String(field.value ?? "");
 }
-function parseSchema(text) {
+function parseSchema(text, label, requireObjectType) {
 	let value;
 	try {
 		value = JSON.parse(text);
 	} catch {
-		throw new Error("args schema must be valid JSON");
+		throw new Error(`${label} must be valid JSON`);
 	}
-	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("args schema must be a JSON object");
+	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
 	const schema = value;
-	if (schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
+	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
 	return schema;
-}
-//#endregion
-//#region src/schema-validator.ts
-/**
-* A small JSON Schema validator for function arguments. It interprets the schema at run time and
-* never generates code, so it also works where `eval` is unavailable (for example Cloudflare Workers).
-*
-* Supported keywords: type, properties, required, additionalProperties (boolean), items, enum,
-* const, minimum, maximum, minLength, maxLength, minItems, maxItems. Other keywords, such as
-* description and title, are ignored.
-*/
-function validateAgainstSchema(value, schema, path = "$") {
-	const rule = asRecord(schema);
-	if (!rule) return [];
-	const errors = [];
-	if (rule.type !== void 0) {
-		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
-		if (!types.some((type) => matchesType(value, type))) return [`${path} must be ${types.join(" or ")}`];
-	}
-	if (Array.isArray(rule.enum) && !rule.enum.some((candidate) => deepEqual(candidate, value))) errors.push(`${path} must be one of ${rule.enum.map((item) => JSON.stringify(item)).join(", ")}`);
-	if ("const" in rule && !deepEqual(rule.const, value)) errors.push(`${path} must be ${JSON.stringify(rule.const)}`);
-	if (typeof value === "number") {
-		if (typeof rule.minimum === "number" && value < rule.minimum) errors.push(`${path} must be >= ${rule.minimum}`);
-		if (typeof rule.maximum === "number" && value > rule.maximum) errors.push(`${path} must be <= ${rule.maximum}`);
-	}
-	if (typeof value === "string") {
-		const length = [...value].length;
-		if (typeof rule.minLength === "number" && length < rule.minLength) errors.push(`${path} must have at least ${rule.minLength} characters`);
-		if (typeof rule.maxLength === "number" && length > rule.maxLength) errors.push(`${path} must have at most ${rule.maxLength} characters`);
-	}
-	if (Array.isArray(value)) {
-		if (typeof rule.minItems === "number" && value.length < rule.minItems) errors.push(`${path} must have at least ${rule.minItems} items`);
-		if (typeof rule.maxItems === "number" && value.length > rule.maxItems) errors.push(`${path} must have at most ${rule.maxItems} items`);
-		if (rule.items !== void 0) value.forEach((item, index) => errors.push(...validateAgainstSchema(item, rule.items, `${path}[${index}]`)));
-	}
-	const object = asRecord(value);
-	if (object) {
-		const properties = asRecord(rule.properties) ?? {};
-		if (Array.isArray(rule.required)) {
-			for (const name of rule.required) if (typeof name === "string" && !(name in object)) errors.push(`${path}.${name} is required`);
-		}
-		for (const [name, child] of Object.entries(object)) if (name in properties) errors.push(...validateAgainstSchema(child, properties[name], `${path}.${name}`));
-		else if (rule.additionalProperties === false) errors.push(`${path}.${name} is not allowed`);
-	}
-	return errors;
-}
-function matchesType(value, type) {
-	switch (type) {
-		case "object": return asRecord(value) !== null;
-		case "array": return Array.isArray(value);
-		case "string": return typeof value === "string";
-		case "number": return typeof value === "number" && Number.isFinite(value);
-		case "integer": return typeof value === "number" && Number.isInteger(value);
-		case "boolean": return typeof value === "boolean";
-		case "null": return value === null;
-		default: return false;
-	}
-}
-function deepEqual(left, right) {
-	return JSON.stringify(left) === JSON.stringify(right);
-}
-function asRecord(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
 //#endregion
 //#region src/composition.ts
@@ -324,7 +341,7 @@ var NamedFunctionsImpl = class {
 		if (options.exportedOnly && definition.exportAs !== "tool") return Promise.reject(/* @__PURE__ */ new Error(`Function ${trimmed} is not exported as a tool.`));
 		const errors = validateAgainstSchema(args, definition.parameters);
 		if (errors.length > 0) return Promise.reject(/* @__PURE__ */ new Error(`Invalid arguments for ${trimmed}: ${errors.join("; ")}`));
-		return this.dispatcher.invoke(trimmed, args, options.caller);
+		return this.dispatcher.invoke(trimmed, args, options.caller, definition.returns);
 	}
 	start(name, args, options = {}) {
 		const id = `p_${this.nextPromiseId++}`;

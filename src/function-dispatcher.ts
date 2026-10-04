@@ -1,4 +1,5 @@
 import type {RuntimeLike, RuntimeThread} from './runtime-types.js';
+import {validateAgainstSchema} from './schema-validator.js';
 
 /**
  * Runs `define function` hats as named functions.
@@ -27,6 +28,7 @@ export interface FunctionDispatcherOptions {
 interface Invocation {
   name: string;
   args: unknown;
+  returnSchema?: unknown;
   chain: readonly string[];
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
@@ -65,7 +67,7 @@ export class FunctionDispatcher {
    * Starts a named function. `caller` is the thread of the block making the call, if any; it is used
    * to detect reentrant calls.
    */
-  public invoke(name: string, args: unknown, caller?: RuntimeThread): Promise<unknown> {
+  public invoke(name: string, args: unknown, caller?: RuntimeThread, returnSchema?: unknown): Promise<unknown> {
     if (!this.options.knownNames().has(name)) {
       return Promise.reject(new Error(`Unknown function: ${name}`));
     }
@@ -79,6 +81,7 @@ export class FunctionDispatcher {
       const invocation: Invocation = {
         name,
         args,
+        ...(returnSchema === undefined ? {} : {returnSchema}),
         chain: [...parentChain, name],
         resolve,
         reject,
@@ -115,7 +118,7 @@ export class FunctionDispatcher {
   public returnFrom(thread: RuntimeThread | undefined, value: unknown): void {
     const invocation = thread ? this.byThread.get(thread) : undefined;
     if (!invocation) throw new Error('return can only be used inside a running function.');
-    this.settle(invocation, null, value);
+    this.settleWithValue(invocation, value);
   }
 
   public cancelAll(reason: string): void {
@@ -157,7 +160,7 @@ export class FunctionDispatcher {
     for (const invocation of this.running.values()) {
       if (invocation.thread && !this.runtime.threads.includes(invocation.thread)) {
         // The script ended without `return`.
-        this.settle(invocation, null, null);
+        this.settleWithValue(invocation, null);
       }
     }
     this.pump();
@@ -174,6 +177,17 @@ export class FunctionDispatcher {
     if (this.starting === invocation) this.starting = null;
     if (error) invocation.reject(error);
     else invocation.resolve(value);
+  }
+
+  private settleWithValue(invocation: Invocation, value: unknown): void {
+    if (invocation.returnSchema !== undefined) {
+      const errors = validateAgainstSchema(value, invocation.returnSchema);
+      if (errors.length > 0) {
+        this.settle(invocation, new Error(`Invalid return value for ${invocation.name}: ${errors.join('; ')}`));
+        return;
+      }
+    }
+    this.settle(invocation, null, value);
   }
 }
 

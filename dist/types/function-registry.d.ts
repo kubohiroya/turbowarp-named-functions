@@ -12,6 +12,8 @@ export interface FunctionDefinition {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
+    /** Omitted on older projects and when RETURNS is left blank. */
+    returns?: Record<string, unknown>;
     exportAs: 'tool' | 'none';
     targetName: string;
     blockId: string;

@@ -11,6 +11,7 @@ A TurboWarp extension for defining named functions that take JSON arguments and 
 - Defines functions with a `define function` hat: a name, a description, and a JSON Schema for the arguments.
 - Calls a function by name and waits for its result (`call function`), or starts it and awaits it later (`start function`, `await`, `await all`).
 - Checks arguments against the schema before the function runs, without generating code.
+- Optionally checks returned values against the same JSON Schema subset.
 - Detects reentrant calls (a function that calls itself directly or indirectly) and reports an error instead of waiting forever.
 - Provides a Composition API so other extensions can bundle the same capability with their own blocks.
 
@@ -22,7 +23,7 @@ A TurboWarp extension for defining named functions that take JSON arguments and 
 > This extension must run unsandboxed because it starts `define function` scripts through the VM runtime.
 > Load extensions only from sources you trust.
 
-- NAME, DESCRIPTION, and SCHEMA in `define function` must be literal text. The hat is read before any script runs.
+- NAME, DESCRIPTION, SCHEMA, and a non-empty RETURNS value in `define function` must be literal text. The hat is read before any script runs.
 - A function exported as a tool may be called with arguments chosen by another program, such as an AI model. Treat arguments as untrusted input even though they match the schema.
 
 ## Installation
@@ -64,9 +65,9 @@ generated section manually.
 
 <!-- BEGIN GENERATED BLOCKS -->
 
-### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] export as [EXPORT]`
+### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. export as tool marks it for consumers such as AI tool calling.
+Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.
 
 | Property | Value |
 |---|---|
@@ -75,6 +76,7 @@ Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. ex
 | `NAME` | String, default: `add` |
 | `DESCRIPTION` | String, default: `Adds two numbers.` |
 | `SCHEMA` | String, default: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
+| `RETURNS` | String, default: `` |
 | `EXPORT` | String, default: `none`, choices: `none`, `tool` |
 
 ### `function argument [PATH]`
@@ -188,11 +190,17 @@ Reports the most recent function error, or an empty string.
 | Several calls to the same function | They run one at a time in order. Different functions run concurrently. |
 | A function calls itself, directly or through other functions | The call fails with `Reentrant call: a -> b -> a`. Use a custom block for recursion. |
 | Arguments do not match the schema | The call fails before the script starts; `last function error` explains which field. |
+| A return value does not match RETURNS | The call fails; `last function error` reports the expected type and JSON path. Ending without `return` is checked as `null`. |
 | The script ends without `return` | The result is empty (`null`). |
 | A function takes longer than 30 seconds | The call fails with a timeout. |
 | More than 8 started calls at once | Further `start function` calls wait for a free slot. |
 | Project stop | Running calls fail and promise references are cleared. |
 | Invalid `define function` hats (non-literal inputs, invalid schema, duplicate names) | The function is not defined; `function [NAME] defined?` reports false. |
+
+The first version keeps schema authoring as literal JSON text. A future visual builder should
+lower object properties and required fields, primitive types, arrays and items, enums, and basic
+constraints into the same canonical JSON Schema object consumed by `validateAgainstSchema`; it
+should not introduce a second validation format or change existing JSON-text projects.
 
 ## Composition API
 

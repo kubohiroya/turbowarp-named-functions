@@ -54,9 +54,9 @@ say (call function [add] with [{"a":1,"b":2}])
 
 <!-- BEGIN GENERATED BLOCKS -->
 
-### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] export as [EXPORT]`
+### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。export asをtoolにすると、AIのツール呼び出しなどの利用側に公開する印になります。
+名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。RETURNSには任意の戻り値JSON Schemaを指定でき、空欄なら戻り値を検証しません。
 
 | 項目 | 値 |
 |---|---|
@@ -65,6 +65,7 @@ say (call function [add] with [{"a":1,"b":2}])
 | `NAME` | 文字列, 既定値: `add` |
 | `DESCRIPTION` | 文字列, 既定値: `Adds two numbers.` |
 | `SCHEMA` | 文字列, 既定値: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
+| `RETURNS` | 文字列, 既定値: `` |
 | `EXPORT` | 文字列, 既定値: `none`, 選択肢: `none`, `tool` |
 
 ### `function argument [PATH]`
@@ -179,10 +180,13 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 | 関数が直接または別の関数を経由して自分自身を呼んだ | `Reentrant call: a -> b -> a`というエラーで失敗する。再帰には独自ブロックを使う |
 | 引数がスキーマに合わない | スクリプトを起動する前に失敗する。どの項目が合わないかは`last function error`でわかる |
 | スクリプトが`return`なしで終わった | 結果は空（`null`）になる |
+| 戻り値がreturns schemaに合わない | 呼び出しが失敗し、`last function error`に期待型とJSON pathが表示される。`return`なしの終了も`null`として検証される |
 | 関数が30秒以内に終わらない | タイムアウトで失敗する |
 | `start function`で同時に9個以上開始した | 空きが出るまで待つ（同時に実行するのは8個まで） |
 | プロジェクトの停止 | 実行中の呼び出しは失敗し、Promiseへの参照は消去される |
 | `define function`ハットが不正（文字列の直書きでない、スキーマが不正、名前の重複） | 関数は定義されない。`function [NAME] defined?`はfalseを返す |
+
+初回は既存のJSON文字列入力を維持します。将来の視覚Schemaビルダーは、object/property/required、primitive型、array/items、enum、基本制約を同じcanonical JSON Schemaへ変換し、`validateAgainstSchema`を共通の検証境界として使う設計です。既存のJSON手入力プロジェクトも同じ形式のまま使えます。
 
 ## Composition API
 

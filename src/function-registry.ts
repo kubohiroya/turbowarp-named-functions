@@ -15,6 +15,8 @@ export interface FunctionDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  /** Omitted on older projects and when RETURNS is left blank. */
+  returns?: Record<string, unknown>;
   exportAs: 'tool' | 'none';
   targetName: string;
   blockId: string;
@@ -82,13 +84,26 @@ function readDefinition(
   if (description.length > MAX_DESCRIPTION_LENGTH) {
     throw new Error(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
   }
-  const parameters = parseSchema(readLiteralInput(block, blocks, 'SCHEMA'));
+  const parameters = parseSchema(readLiteralInput(block, blocks, 'SCHEMA'), 'args schema', true);
+  const returnsText = readOptionalLiteralInput(block, blocks, 'RETURNS');
+  const returns = returnsText === undefined || returnsText.trim() === ''
+    ? undefined
+    : parseSchema(returnsText, 'returns schema', false);
   const exportValue = String(block.fields?.EXPORT?.value ?? 'none');
   const exportAs = exportValue === 'tool' ? 'tool' : 'none';
   if (exportAs === 'tool' && description.length === 0) {
     throw new Error('a function exported as a tool needs a description');
   }
-  return {name, description, parameters, exportAs, targetName, blockId: block.id};
+  return {name, description, parameters, ...(returns ? {returns} : {}), exportAs, targetName, blockId: block.id};
+}
+
+function readOptionalLiteralInput(
+  block: SerializedBlock,
+  blocks: Record<string, SerializedBlock>,
+  inputName: string
+): string | undefined {
+  if (!block.inputs?.[inputName]) return undefined;
+  return readLiteralInput(block, blocks, inputName);
 }
 
 function readLiteralInput(
@@ -108,17 +123,17 @@ function readLiteralInput(
   return String(field.value ?? '');
 }
 
-function parseSchema(text: string): Record<string, unknown> {
+function parseSchema(text: string, label: string, requireObjectType: boolean): Record<string, unknown> {
   let value: unknown;
   try {
     value = JSON.parse(text) as unknown;
   } catch {
-    throw new Error('args schema must be valid JSON');
+    throw new Error(`${label} must be valid JSON`);
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('args schema must be a JSON object');
+    throw new Error(`${label} must be a JSON object`);
   }
   const schema = value as Record<string, unknown>;
-  if (schema.type !== 'object') throw new Error('args schema must have "type": "object"');
+  if (requireObjectType && schema.type !== 'object') throw new Error('args schema must have "type": "object"');
   return schema;
 }
