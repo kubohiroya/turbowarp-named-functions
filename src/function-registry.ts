@@ -1,4 +1,5 @@
 import type {RuntimeTarget, SerializedBlock} from './runtime-types.js';
+import {validateSchemaDefinition} from './schema-validator.js';
 
 /** A function exported as a tool, in the shape used by OpenAI function calling. */
 export interface FunctionTool {
@@ -135,5 +136,6 @@ function parseSchema(text: string, label: string, requireObjectType: boolean): R
   }
   const schema = value as Record<string, unknown>;
   if (requireObjectType && schema.type !== 'object') throw new Error('args schema must have "type": "object"');
+  validateSchemaDefinition(schema, label);
   return schema;
 }

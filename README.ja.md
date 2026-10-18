@@ -186,7 +186,16 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 | プロジェクトの停止 | 実行中の呼び出しは失敗し、Promiseへの参照は消去される |
 | `define function`ハットが不正（文字列の直書きでない、スキーマが不正、名前の重複） | 関数は定義されない。`function [NAME] defined?`はfalseを返す |
 
-初回は既存のJSON文字列入力を維持します。将来の視覚Schemaビルダーは、object/property/required、primitive型、array/items、enum、基本制約を同じcanonical JSON Schemaへ変換し、`validateAgainstSchema`を共通の検証境界として使う設計です。既存のJSON手入力プロジェクトも同じ形式のまま使えます。
+初回は既存のJSON文字列入力を維持します。視覚Schemaビルダーは、`define schema`ハットの下に宣言的なpropertyブロックを並べる形を提案します。
+
+```text
+define schema [Player] version [1.0.0]
+  property [name] type [string] required
+  property [score] type [number] required minimum (0)
+  property [tags] type [array of string] optional
+```
+
+ネストしたobjectやarrayのpropertyは別の名前付きSchemaを参照できるようにし、同じSchemaを関数の引数・戻り値・名前付きデータに選べるようにします。ブロック列は`validateAgainstSchema`が扱うcanonical JSON Schemaへ変換し、別の検証形式を作らず、既存のJSON文字列プロジェクトもそのまま使います。これはブロック仕様案であり、まだ実装されていません。実装境界はSchema定義と変換層です。リテラルのブロック項目を読み、重複・不正な定義を報告してcanonical schemaを生成します。Schema読み込み時に任意のブロックを実行しません。ブロックのmutation UIやネストSchemaの編集体験は別の実装作業です。
 
 ## Composition API
 
