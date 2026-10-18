@@ -1,5 +1,5 @@
 /**
- * A small JSON Schema validator for function arguments. It interprets the schema at run time and
+ * A small JSON Schema validator for function arguments and returns. It interprets the schema at run time and
  * never generates code, so it also works where `eval` is unavailable (for example Cloudflare Workers).
  *
  * Supported keywords: type, properties, required, additionalProperties (boolean), items, enum,
@@ -9,7 +9,19 @@
 
 export function validateAgainstSchema(value: unknown, schema: unknown, path = '$'): string[] {
   const rule = asRecord(schema);
-  if (!rule) return [];
+  if (!rule) throw new Error(`${path} must be a JSON Schema object`);
+  assertSchemaNode(rule, path);
+  return validateValue(value, rule, path);
+}
+
+/** Reject malformed schemas before a function definition or call can use them. */
+export function validateSchemaDefinition(schema: unknown, label = 'schema'): void {
+  const rule = asRecord(schema);
+  if (!rule) throw new Error(`${label} must be a JSON object`);
+  assertSchemaNode(rule, label);
+}
+
+function validateValue(value: unknown, rule: Record<string, unknown>, path: string): string[] {
   const errors: string[] = [];
 
   if (rule.type !== undefined) {
@@ -46,7 +58,7 @@ export function validateAgainstSchema(value: unknown, schema: unknown, path = '$
       errors.push(`${path} must have at most ${rule.maxItems} items`);
     }
     if (rule.items !== undefined) {
-      value.forEach((item, index) => errors.push(...validateAgainstSchema(item, rule.items, `${path}[${index}]`)));
+      value.forEach((item, index) => errors.push(...validateValue(item, rule.items as Record<string, unknown>, `${path}[${index}]`)));
     }
   }
 
@@ -55,18 +67,71 @@ export function validateAgainstSchema(value: unknown, schema: unknown, path = '$
     const properties = asRecord(rule.properties) ?? {};
     if (Array.isArray(rule.required)) {
       for (const name of rule.required) {
-        if (typeof name === 'string' && !(name in object)) errors.push(`${path}.${name} is required`);
+        if (typeof name === 'string' && !Object.hasOwn(object, name)) errors.push(`${path}.${name} is required`);
       }
     }
     for (const [name, child] of Object.entries(object)) {
-      if (name in properties) {
-        errors.push(...validateAgainstSchema(child, properties[name], `${path}.${name}`));
+      if (Object.hasOwn(properties, name)) {
+        errors.push(...validateValue(child, properties[name] as Record<string, unknown>, `${path}.${name}`));
       } else if (rule.additionalProperties === false) {
         errors.push(`${path}.${name} is not allowed`);
       }
     }
   }
   return errors;
+}
+
+function assertSchemaNode(rule: Record<string, unknown>, path: string): void {
+  const validTypes = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']);
+  if (rule.type !== undefined) {
+    const types = Array.isArray(rule.type) ? rule.type : [rule.type];
+    if (types.length === 0 || types.some((type) => typeof type !== 'string' || !validTypes.has(type))) {
+      throw new Error(`${path}.type must be a supported JSON Schema type or non-empty type array`);
+    }
+  }
+  if (rule.properties !== undefined) {
+    const properties = asRecord(rule.properties);
+    if (!properties) throw new Error(`${path}.properties must be an object`);
+    for (const [name, child] of Object.entries(properties)) {
+      const childRule = asRecord(child);
+      if (!childRule) throw new Error(`${path}.properties.${name} must be a JSON Schema object`);
+      assertSchemaNode(childRule, `${path}.properties.${name}`);
+    }
+  }
+  if (rule.required !== undefined && (!Array.isArray(rule.required) || rule.required.some((name) => typeof name !== 'string'))) {
+    throw new Error(`${path}.required must be an array of strings`);
+  }
+  if (rule.additionalProperties !== undefined && typeof rule.additionalProperties !== 'boolean') {
+    throw new Error(`${path}.additionalProperties must be a boolean`);
+  }
+  if (rule.items !== undefined) {
+    const items = asRecord(rule.items);
+    if (!items) throw new Error(`${path}.items must be a JSON Schema object`);
+    assertSchemaNode(items, `${path}.items`);
+  }
+  if (rule.enum !== undefined && (!Array.isArray(rule.enum) || rule.enum.length === 0)) {
+    throw new Error(`${path}.enum must be a non-empty array`);
+  }
+  for (const keyword of ['minimum', 'maximum'] as const) {
+    if (rule[keyword] !== undefined && (typeof rule[keyword] !== 'number' || !Number.isFinite(rule[keyword]))) {
+      throw new Error(`${path}.${keyword} must be a finite number`);
+    }
+  }
+  for (const keyword of ['minLength', 'maxLength', 'minItems', 'maxItems'] as const) {
+    const value = rule[keyword];
+    if (value !== undefined && (typeof value !== 'number' || !Number.isInteger(value) || value < 0)) {
+      throw new Error(`${path}.${keyword} must be a non-negative integer`);
+    }
+  }
+  if (typeof rule.minimum === 'number' && typeof rule.maximum === 'number' && rule.minimum > rule.maximum) {
+    throw new Error(`${path}.minimum cannot exceed maximum`);
+  }
+  if (typeof rule.minLength === 'number' && typeof rule.maxLength === 'number' && rule.minLength > rule.maxLength) {
+    throw new Error(`${path}.minLength cannot exceed maxLength`);
+  }
+  if (typeof rule.minItems === 'number' && typeof rule.maxItems === 'number' && rule.minItems > rule.maxItems) {
+    throw new Error(`${path}.minItems cannot exceed maxItems`);
+  }
 }
 
 function matchesType(value: unknown, type: unknown): boolean {

@@ -4,7 +4,7 @@ export type { FunctionDefinition, FunctionScan, FunctionTool } from './function-
 export { FUNCTION_NAME_PATTERN, scanFunctionDefinitions, toFunctionTools } from './function-registry.js';
 export type { RuntimeLike, RuntimeThread, BlockUtilityLike } from './runtime-types.js';
 export { parseJsonOrText, readArgumentPath, toScratchValue } from './function-dispatcher.js';
-export { validateAgainstSchema } from './schema-validator.js';
+export { validateAgainstSchema, validateSchemaDefinition } from './schema-validator.js';
 export interface PromiseRef {
     $promise: string;
 }

@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {validateAgainstSchema} from '../src/schema-validator.js';
+import {validateAgainstSchema, validateSchemaDefinition} from '../src/schema-validator.js';
 
 const schema = {
   type: 'object',
@@ -42,8 +42,33 @@ describe('validateAgainstSchema', () => {
     expect(validateAgainstSchema('😀😀', {type: 'string', maxLength: 2})).toEqual([]);
   });
 
-  it('ignores unknown keywords and non-object schemas', () => {
+  it('ignores unknown keywords but rejects non-object schemas', () => {
     expect(validateAgainstSchema(1, {description: 'x', format: 'email'})).toEqual([]);
-    expect(validateAgainstSchema(1, null)).toEqual([]);
+    expect(() => validateAgainstSchema(1, null)).toThrow('must be a JSON Schema object');
+  });
+
+  it.each([
+    [{type: 'object', properties: {name: 'string'}}, '$.properties.name'],
+    [{type: 'object', properties: []}, '$.properties'],
+    [{type: 'object', items: 'string'}, '$.items'],
+    [{type: 'mystery'}, '$.type'],
+    [{type: 'object', required: [1]}, '$.required'],
+    [{type: 'string', minLength: -1}, '$.minLength'],
+    [{type: 'number', minimum: 10, maximum: 1}, '$.minimum']
+  ])('rejects malformed schema definitions %j', (definition, path) => {
+    expect(() => validateSchemaDefinition(definition, '$')).toThrow(path);
+  });
+
+  it('uses a schema label by default and accepts valid nested definitions', () => {
+    expect(() => validateSchemaDefinition({type: 'mystery'})).toThrow('schema.type');
+    expect(() => validateSchemaDefinition(schema)).not.toThrow();
+    expect(() => validateSchemaDefinition({type: ['string', 'null'], enum: ['value', null]})).not.toThrow();
+  });
+
+  it('does not treat inherited object properties as declared schema properties', () => {
+    const prototypeName = JSON.parse('{"constructor":"unexpected"}') as {constructor: string};
+    expect(validateAgainstSchema(prototypeName, {type: 'object', properties: {}, additionalProperties: false})).toContain(
+      '$.constructor is not allowed'
+    );
   });
 });

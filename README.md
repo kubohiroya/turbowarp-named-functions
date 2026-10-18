@@ -197,10 +197,24 @@ Reports the most recent function error, or an empty string.
 | Project stop | Running calls fail and promise references are cleared. |
 | Invalid `define function` hats (non-literal inputs, invalid schema, duplicate names) | The function is not defined; `function [NAME] defined?` reports false. |
 
-The first version keeps schema authoring as literal JSON text. A future visual builder should
-lower object properties and required fields, primitive types, arrays and items, enums, and basic
-constraints into the same canonical JSON Schema object consumed by `validateAgainstSchema`; it
-should not introduce a second validation format or change existing JSON-text projects.
+The first version keeps schema authoring as literal JSON text. The visual builder should use a
+`define schema` hat followed by declarative property blocks. For example:
+
+```text
+define schema [Player] version [1.0.0]
+  property [name] type [string] required
+  property [score] type [number] required minimum (0)
+  property [tags] type [array of string] optional
+```
+
+Nested object and array properties should reference another named schema, so the same schema can
+be selected for function arguments, return values, and named data. The block sequence must lower
+to the canonical JSON Schema object consumed by `validateAgainstSchema`; it must not create a
+second validation format or change existing JSON-text projects. This is a proposed block contract,
+not an implemented feature. The implementation boundary is the schema definition and conversion
+layer: it reads literal block fields, reports duplicate/invalid definitions, and produces the
+canonical schema. It does not execute arbitrary blocks while loading a schema. Editor block
+mutation and nested-schema UX remain separate implementation work.
 
 ## Composition API
 

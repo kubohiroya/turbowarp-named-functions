@@ -47,6 +47,15 @@ describe('scanFunctionDefinitions', () => {
   });
 
   it.each([
+    [{schema: '{"type":"object","properties":{"name":"string"}}'}, 'args schema.properties.name'],
+    [{returns: '{"type":"array","items":"string"}'}, 'returns schema.items']
+  ])('rejects structurally invalid schema definitions %o', (definition, message) => {
+    const scan = scanFunctionDefinitions([targetWithFunctions(OPCODE, [{name: 'invalid', ...definition}])], OPCODE);
+    expect(scan.functions).toEqual([]);
+    expect(scan.errors[0]).toContain(message);
+  });
+
+  it.each([
     [{name: 'bad name'}, 'function name'],
     [{name: 'a', schema: 'not json'}, 'valid JSON'],
     [{name: 'a', schema: '[]'}, 'JSON object'],
