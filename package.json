@@ -28,7 +28,8 @@
     "src/",
     "README.md",
     "README.ja.md",
-    "LICENSE"
+    "LICENSE",
+    "schemas/"
   ],
   "publishConfig": {
     "access": "public",
@@ -44,8 +45,8 @@
     "build": "vite build && vite build --config vite.composition.config.ts && tsc --project tsconfig.build.json",
     "lint": "eslint src tests scripts vite.config.ts vite.composition.config.ts eslint.config.ts",
     "test": "vitest run",
-    "docs": "node scripts/generate-readme.ts",
-    "docs:check": "node scripts/generate-readme.ts --check",
+    "docs": "node scripts/generate-readme.ts && node scripts/generate-fixed-input-docs.mjs",
+    "docs:check": "node scripts/generate-readme.ts --check && node scripts/generate-fixed-input-docs.mjs --check",
     "repo:check": "node scripts/check-repo.ts",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run docs:check && pnpm run check:dist && pnpm run types:composition:check && pnpm run repo:check && pnpm run pack:check",
@@ -71,5 +72,8 @@
     },
     "./turbowarp-named-functions.js": "./dist/turbowarp-named-functions.js",
     "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@kubohiroya/turbowarp-extension-data-editor": "git+https://github.com/kubohiroya/turbowarp-extension-data-editor.git#485f0e550e622235624b5e9176820161aeeba252"
   }
 }
