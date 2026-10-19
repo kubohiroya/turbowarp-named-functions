@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-named-functions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Named, JSON-in/JSON-out functions for TurboWarp that can be called by name, synchronously or asynchronously, and exported as tools.",
   "author": "Hiroya Kubo <hiroya@cuc.ac.jp>",
   "license": "MPL-2.0",
@@ -28,7 +28,8 @@
     "src/",
     "README.md",
     "README.ja.md",
-    "LICENSE"
+    "LICENSE",
+    "schemas/"
   ],
   "publishConfig": {
     "access": "public",
@@ -44,8 +45,8 @@
     "build": "vite build && vite build --config vite.composition.config.ts && tsc --project tsconfig.build.json",
     "lint": "eslint src tests scripts vite.config.ts vite.composition.config.ts eslint.config.ts",
     "test": "vitest run",
-    "docs": "node scripts/generate-readme.ts",
-    "docs:check": "node scripts/generate-readme.ts --check",
+    "docs": "node scripts/generate-readme.ts && node scripts/generate-fixed-input-docs.mjs",
+    "docs:check": "node scripts/generate-readme.ts --check && node scripts/generate-fixed-input-docs.mjs --check",
     "repo:check": "node scripts/check-repo.ts",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run docs:check && pnpm run check:dist && pnpm run types:composition:check && pnpm run repo:check && pnpm run pack:check",
@@ -54,8 +55,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@kubohiroya/turbowarp-extension-manifest": "0.2.0",
-    "@kubohiroya/vite-plugin-turbowarp-extension": "0.3.0",
+    "@kubohiroya/turbowarp-extension-manifest": "0.3.2",
+    "@kubohiroya/vite-plugin-turbowarp-extension": "0.6.1",
     "@types/node": "^24.13.3",
     "eslint": "^9.39.5",
     "jiti": "^2.7.0",
@@ -71,5 +72,14 @@
     },
     "./turbowarp-named-functions.js": "./dist/turbowarp-named-functions.js",
     "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@kubohiroya/turbowarp-extension-data-editor": "0.2.1"
+  },
+  "gitHead": "69d13e22ed36d0566abf964a67c3a5d746505c2e",
+  "x-turbowarp-source": {
+    "revision": "69d13e22ed36d0566abf964a67c3a5d746505c2e",
+    "revisionRole": "base-commit",
+    "sourceState": "local-release-overlay"
   }
 }

@@ -1,3 +1,4 @@
+import {fixedInputEditorDefinitions, registerFixedInputEditors} from './fixed-input-editors.js';
 import {extensionConfig} from './config';
 import definitions from './block-definitions.json';
 import {
@@ -45,9 +46,22 @@ type Util = BlockUtilityLike & {stopThisScript?: () => void};
 export class NamedFunctionsExtension implements TurboWarpExtension {
   private lastErrorMessage = '';
   private readonly functions: NamedFunctions;
+  private readonly unregisterFixedInputEditors: () => void;
 
   public constructor(deps: NamedFunctionsExtensionDependencies) {
-    this.functions = createNamedFunctions({...deps, functionHatOpcode: DEFINE_FUNCTION_OPCODE});
+    this.unregisterFixedInputEditors = registerFixedInputEditors(
+      typeof Scratch === 'undefined' ? {} : Scratch, fixedInputEditorDefinitions, deps.runtime
+    );
+    try {
+      this.functions = createNamedFunctions({...deps, functionHatOpcode: DEFINE_FUNCTION_OPCODE});
+    } catch (error) {
+      this.unregisterFixedInputEditors();
+      throw error;
+    }
+  }
+
+  public dispose(): void {
+    this.unregisterFixedInputEditors();
   }
 
   public getInfo(): Record<string, unknown> {

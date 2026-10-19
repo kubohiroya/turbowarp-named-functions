@@ -38,7 +38,7 @@ A TurboWarp extension for defining named functions that take JSON arguments and 
 ### npm package
 
 ```bash
-pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.1.0
+pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.1.1
 ```
 
 Standalone bundle:
@@ -278,3 +278,15 @@ SCRATCH_VM_PATH=/path/to/TurboWarp/scratch-vm pnpm test
 ## License
 
 [Mozilla Public License 2.0](LICENSE) (SPDX: `MPL-2.0`).
+
+## 固定引数の編集フォーム（S3-4）
+
+共通エディターの起動時フラグ `blockEditorFixedInputs` とDialogsがONのGUIでは、`defineFunction` の `EXPORT` だけを固定フォームとして登録します。旧GUI・フラグOFFでは追加登録を行いません。Schemaの正本は `schemas/block-editor-fixed-inputs.schema.json#/$defs/defineFunction/properties/EXPORT`、codecと登録は `src/fixed-input-editors.ts` です。既存raw値・未変更alias・未知enumは無操作保存で書き換えず、reporterを評価しません。明示変更だけを検査し、他の引数やブロック宣言、保存形式を変更しません。
+
+HATの直付けEXPORT dropdownはnone/toolを保存値として使用します。NAME/DESCRIPTION/SCHEMA/RETURNSを編集・実行せず、関数探索・HAT開始・tool公開はフォームの検査から呼びません。
+
+登録はoptional API（apiVersion:1）に限定し、RUNTIME_DISPOSED/明示disposeで解除します。起動フラグOFF＋再読込で従来経路へ切り戻せます。依存を戻す場合はmanifest/lock/実解決を一組で復旧します。npm公開や後続段階の動的候補は含みません。
+
+Schemaが記述する契約の根拠は実getInfoの宣言と既存の純粋なruntime変換です。SchemaBundleのretrievalUriはこのローカル文書の識別子であり、URL配信済み・HTTP取得によるref解決を意味しません。Schemaは同梱文書だけでcompileします。
+
+Registration uses the optional editor API available when the extension instance is constructed. Adding or replacing that API later is not followed automatically; reload the GUI and reconstruct the extension instance after changing the startup configuration.

@@ -19,6 +19,133 @@
   	docsURI: "https://kubohiroya.github.io/turbowarp-named-functions/",
   	blockIconURI: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCI+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzhBNTVENyIvPjx0ZXh0IHg9IjI0IiB5PSIzMSIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9ImJvbGQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmYiPmYoeCk8L3RleHQ+PC9zdmc+"
   };
+  var block_editor_fixed_inputs_schema_default = {
+  	$schema: "https://json-schema.org/draft/2020-12/schema",
+  	$id: "https://kubohiroya.github.io/turbowarp-named-functions/schemas/block-editor-fixed-inputs.schema.json",
+  	$defs: { "defineFunction": {
+  		"type": "object",
+  		"properties": { "EXPORT": {
+  			"type": "string",
+  			"enum": ["none", "tool"]
+  		} },
+  		"required": ["EXPORT"],
+  		"additionalProperties": true
+  	} }
+  };
+  //#endregion
+  //#region src/fixed-input-schema.ts
+  var source = {
+  	repository: "turbowarp-named-functions",
+  	path: "schemas/block-editor-fixed-inputs.schema.json",
+  	symbol: "#/$defs/defineFunction/properties/EXPORT"
+  };
+  /** The on-disk owner Schema is canonical; this is its single-field projection. */
+  var fixedInputSchemaBundle = {
+  	identity: {
+  		ownerId: "turbowarp-named-functions",
+  		contractId: "defineFunction.EXPORT",
+  		revision: "fixed-inputs-v1",
+  		variantId: "default"
+  	},
+  	dialect: "2020-12",
+  	root: {
+  		retrievalUri: "https://kubohiroya.github.io/turbowarp-named-functions/schemas/defineFunction-EXPORT.schema.json",
+  		document: block_editor_fixed_inputs_schema_default.$defs.defineFunction.properties.EXPORT,
+  		artifact: {
+  			role: "canonical-schema",
+  			source
+  		}
+  	},
+  	resources: [],
+  	provenance: {
+  		canonicalSources: [source, {
+  			repository: "turbowarp-named-functions",
+  			path: "src/function-registry.ts",
+  			symbol: "readDefinition"
+  		}],
+  		generatedFiles: [{
+  			repository: "turbowarp-named-functions",
+  			path: "site/schemas/block-editor-fixed-inputs.schema.json"
+  		}],
+  		referenceSchemas: [],
+  		generationSources: [{
+  			repository: "turbowarp-named-functions",
+  			path: "scripts/generate-fixed-input-docs.mjs"
+  		}]
+  	}
+  };
+  //#endregion
+  //#region src/fixed-input-editors.ts
+  var choices = ["none", "tool"];
+  var fixedInputEditorDefinitions = [{
+  	apiVersion: 1,
+  	extensionId: extensionConfig.id,
+  	editorId: "defineFunction-fixed-inputs",
+  	opcodes: [`${extensionConfig.id}_defineFunction`],
+  	contractId: "turbowarp-named-functions:defineFunction.EXPORT",
+  	contractRevision: "fixed-inputs-v1",
+  	bindings: [{
+  		argument: "EXPORT",
+  		schemaBundle: fixedInputSchemaBundle,
+  		control: {
+  			kind: "enum",
+  			label: "EXPORT",
+  			choices: [{
+  				"value": "none",
+  				"label": "none"
+  			}, {
+  				"value": "tool",
+  				"label": "tool"
+  			}]
+  		},
+  		read(value) {
+  			if (typeof value !== "string") throw new TypeError("Expected a literal export mode.");
+  			return value;
+  		},
+  		encode(value) {
+  			if (typeof value !== "string" || !choices.includes(value)) throw new TypeError("Unsupported export mode.");
+  			return value;
+  		},
+  		validateCandidate(value) {
+  			return typeof value === "string" && choices.includes(value) ? [] : [{
+  				path: "/inputs/EXPORT",
+  				message: "Unsupported export mode."
+  			}];
+  		}
+  	}],
+  	validationContext: () => ({
+  		consumerId: extensionConfig.id,
+  		nowMs: Date.now(),
+  		settings: null
+  	})
+  }];
+  /** Register metadata only; the GUI startup capability owns editor activation. */
+  function registerFixedInputEditors(scratch, definitions, runtimeOverride) {
+  	const host = scratch;
+  	const api = host.gui?.blockEditors;
+  	if (!definitions.length || api?.apiVersion !== 1 || typeof api.registerFixedInputEditor !== "function") return () => {};
+  	const runtime = runtimeOverride ?? host.vm?.runtime;
+  	const removers = [];
+  	let active = true;
+  	const dispose = () => {
+  		if (!active) return;
+  		active = false;
+  		runtime?.off?.("RUNTIME_DISPOSED", dispose);
+  		for (const remove of removers.splice(0).reverse()) remove();
+  	};
+  	try {
+  		for (const definition of definitions) {
+  			const remove = api.registerFixedInputEditor.call(api, definition);
+  			if (typeof remove !== "function") throw new TypeError("Invalid fixed input registration disposer.");
+  			removers.push(remove);
+  		}
+  		runtime?.on?.("RUNTIME_DISPOSED", dispose);
+  	} catch (error) {
+  		dispose();
+  		throw error;
+  	}
+  	return dispose;
+  }
   var block_definitions_default = {
   	extensionName: "Named Functions",
   	blocks: [
@@ -653,10 +780,19 @@
   var NamedFunctionsExtension = class {
   	constructor(deps) {
   		this.lastErrorMessage = "";
-  		this.functions = createNamedFunctions({
-  			...deps,
-  			functionHatOpcode: DEFINE_FUNCTION_OPCODE
-  		});
+  		this.unregisterFixedInputEditors = registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, fixedInputEditorDefinitions, deps.runtime);
+  		try {
+  			this.functions = createNamedFunctions({
+  				...deps,
+  				functionHatOpcode: DEFINE_FUNCTION_OPCODE
+  			});
+  		} catch (error) {
+  			this.unregisterFixedInputEditors();
+  			throw error;
+  		}
+  	}
+  	dispose() {
+  		this.unregisterFixedInputEditors();
   	}
   	getInfo() {
   		return {

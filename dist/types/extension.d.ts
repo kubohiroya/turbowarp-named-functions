@@ -10,7 +10,9 @@ type Util = BlockUtilityLike & {
 export declare class NamedFunctionsExtension implements TurboWarpExtension {
     private lastErrorMessage;
     private readonly functions;
+    private readonly unregisterFixedInputEditors;
     constructor(deps: NamedFunctionsExtensionDependencies);
+    dispose(): void;
     getInfo(): Record<string, unknown>;
     defineFunction(args: Args, util?: Util): boolean;
     functionArgument(args: Args, util?: Util): string | number | boolean;

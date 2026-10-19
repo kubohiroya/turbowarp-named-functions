@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubohiroya.github.io/turbowarp-named-functions/schemas/block-editor-fixed-inputs.schema.json",
+  "$defs": {
+    "defineFunction": {
+      "type": "object",
+      "properties": {
+        "EXPORT": {
+          "type": "string",
+          "enum": [
+            "none",
+            "tool"
+          ]
+        }
+      },
+      "required": [
+        "EXPORT"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
