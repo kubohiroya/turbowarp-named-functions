@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="TurboWarp-Named-Functions拡張機能の利用者ガイド。JSONを受け取りJSONを返す関数を一度定義し、どのスプライトからでも名前で呼び出し、並列に実行し、AIのツールとして公開できます。">
+    <meta name="theme-color" content="#8a55d7">
+    <title>Named Functions — 利用者ガイド</title>
+    <link rel="canonical" href="https://kubohiroya.github.io/turbowarp-named-functions/ja/">
+    <link rel="alternate" hreflang="en" href="https://kubohiroya.github.io/turbowarp-named-functions/">
+    <link rel="alternate" hreflang="ja" href="https://kubohiroya.github.io/turbowarp-named-functions/ja/">
+    <link rel="alternate" hreflang="x-default" href="https://kubohiroya.github.io/turbowarp-named-functions/">
+    <link rel="stylesheet" href="../assets/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">ガイド本文へ移動</a>
+    <header class="app-bar">
+      <div class="app-bar-inner">
+        <a class="app-bar-brand" href="./" aria-label="Named Functionsガイドの先頭">
+          <span class="app-bar-mark" aria-hidden="true">f</span>
+          <span class="app-bar-label">Named Functions</span>
+        </a>
+        <nav class="app-bar-sections" aria-label="ガイドのセクション">
+          <a href="#quick-start">はじめに</a>
+          <a href="#examples">使用例</a>
+          <a href="#schemas">スキーマ</a>
+          <a href="#composition">Composition API</a>
+          <a href="#reference">ブロック一覧</a>
+        </nav>
+        <div class="app-bar-actions">
+          <a class="app-bar-github" href="https://github.com/kubohiroya/turbowarp-named-functions" aria-label="GitHubでソースコードとリリースを見る">GitHub</a>
+          <nav class="app-bar-languages" aria-label="言語">
+            <a href="../" lang="en" hreflang="en">English</a>
+            <a aria-current="page" href="./" lang="ja" hreflang="ja">日本語</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">TurboWarp拡張機能 · 利用者ガイド</p>
+          <h1 id="hero-title">一度書けば、名前で呼べる。</h1>
+          <p class="lead">
+            Named Functionsは、スクリプトを「名前・説明・引数のJSON Schema」を持つ関数に変えます。どのスプライトからでも呼び出して値を受け取れます。結果を待つことも、複数の呼び出しを先に始めて後でまとめて受け取ることもできます。関数を<strong>ツール</strong>として公開すれば、AIのツール呼び出しなど他の拡張機能からも使えます。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#quick-start">4ステップで始める</a>
+            <a class="button" href="#examples">ブロック例を見る</a>
+          </div>
+        </div>
+
+        <div class="hero-visual function-hero" aria-label="あるスプライトのdefine functionハットが、別のスプライトのcall functionブロックへ値を返す図">
+          <div class="function-window" aria-hidden="true">
+            <p class="stack-label">スプライト「Calculator」で定義</p>
+            <div class="block-stack">
+              <div class="scratch-block hat">define function <span class="slot">add</span> args schema <span class="slot json">{"a":number,"b":number}</span></div>
+              <div class="scratch-block">return <span class="slot">(a) + (b)</span></div>
+            </div>
+            <p class="stack-label">スプライト「Player」から呼び出し</p>
+            <div class="block-stack">
+              <div class="scratch-block event">緑の旗が押されたとき</div>
+              <div class="scratch-block looks">言う <span class="slot">call function add with {"a":1,"b":2}</span></div>
+            </div>
+            <div class="result-chip"><span>返される値</span><strong>3</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="why" aria-labelledby="why-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">何に役立つか</p>
+            <h2 id="why-title">ブロック定義はスプライトの外に出られない</h2>
+          </div>
+          <p>
+            ブロック定義（カスタムブロック）は1つのスプライトに属し、値を返せません。メッセージはすべてのスプライトに届きますが、引数も結果も運べません。Named Functionsはその隙間を埋め、どのスクリプトからでも呼べて、入力が検査され、本当に値を返す処理の単位を提供します。
+          </p>
+        </div>
+
+        <div class="reference-grid">
+          <article class="reference-card">
+            <h3>スプライト間でロジックを共有</h3>
+            <p>得点計算、持ち物、会話の規則を1か所にまとめます。スクリプトを複製せず、すべてのスプライトとステージから同じ関数を呼び出します。</p>
+          </article>
+          <article class="reference-card">
+            <h3>構造化された結果を受け取る</h3>
+            <p>JSONを渡してJSONを受け取ります。数値・文字列・リスト・オブジェクトを返せ、引数はスクリプト開始前に検査されます。</p>
+          </article>
+          <article class="reference-card optional">
+            <h3>AIにツールを提供</h3>
+            <p>ツールとして公開した関数はOpenAIのfunction calling形式で一覧化され、AI拡張機能がプロジェクトにできることを知り、呼び出せます。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="quick-start" aria-labelledby="quick-start-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">はじめに</p>
+            <h2 id="quick-start-title">4ステップで準備完了</h2>
+          </div>
+          <p>
+            関数は<strong>define function</strong>ハットを読み取って見つけるため、起動時の登録は不要です。ハットを置き、本体を書き、呼び出すだけです。
+          </p>
+        </div>
+
+        <ol class="steps">
+          <li>
+            <h3>拡張機能を読み込む</h3>
+            <p>
+              <strong>サンドボックスなしで実行</strong>を有効にして、カスタム拡張機能として読み込みます。関数スクリプトの開始にVMランタイムを使うためです。
+            </p>
+          </li>
+          <li>
+            <h3>defineハットを置く</h3>
+            <p>
+              任意のスプライトに<strong>define function</strong>を置きます。名前・説明・args schemaはハットに直接入力します。これらはリテラル文字列である必要があります。
+            </p>
+          </li>
+          <li>
+            <h3>本体を書く</h3>
+            <p>
+              <strong>function argument</strong>で入力を読み、<strong>return</strong>で終えます。<code>return</code>せずに終わったスクリプトは<code>null</code>を返します。
+            </p>
+          </li>
+          <li>
+            <h3>どこからでも呼ぶ</h3>
+            <p>
+              どのスプライトからでも、JSON引数を付けて<strong>call function</strong>を使います。ブロックは関数の終了を待ち、戻り値を返します。
+            </p>
+          </li>
+        </ol>
+
+        <figure class="flow-figure">
+          <figcaption class="figure-kicker">1回の呼び出しで起きること</figcaption>
+          <div class="flow" role="img" aria-label="呼び出しは引数を検査し、一致するdefine functionのスクリプトを実行し、戻り値を返す">
+            <div class="flow-node">
+              <span class="flow-icon" aria-hidden="true">↘</span>
+              <strong>call function</strong>
+              <small>名前＋JSON引数</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node">
+              <span class="flow-icon" aria-hidden="true">✓</span>
+              <strong>引数を検査</strong>
+              <small>args schemaと照合</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node accent">
+              <span class="flow-icon" aria-hidden="true">▶</span>
+              <strong>関数を実行</strong>
+              <small>名前が一致するハットのスクリプト</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node optional">
+              <span class="flow-icon" aria-hidden="true">↩</span>
+              <strong>結果を返す</strong>
+              <small>RETURNSで検査も可能</small>
+            </div>
+          </div>
+          <p class="figure-note">
+            引数が不正ならスクリプトは開始されず、<strong>last function error</strong>が一致しなかった項目を示します。
+          </p>
+        </figure>
+
+        <div class="callout">
+          <span aria-hidden="true">⚑</span>
+          <div>
+            <strong>拡張機能のURL</strong>
+            <p>
+              バージョン固定のビルドを使ってください：<a href="https://cdn.jsdelivr.net/npm/@kubohiroya/turbowarp-named-functions@0.1.1/dist/turbowarp-named-functions.js"><code>@kubohiroya/turbowarp-named-functions@0.1.1</code></a>。信頼できる配布元の拡張機能だけを読み込んでください。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="examples" aria-labelledby="examples-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">使用例</p>
+            <h2 id="examples-title">関数を呼ぶ3つの方法</h2>
+          </div>
+          <p>
+            1つの結果を待つ、複数の呼び出しを始めてまとめて受け取る、どの関数を呼ぶかを他のプログラムに任せる——の3通りです。
+          </p>
+        </div>
+
+        <div class="example-grid">
+          <article class="example-card">
+            <span class="example-type">↩ 呼んで待つ</span>
+            <h3>ダメージ値を計算する</h3>
+            <div class="block-stack" aria-label="Scratchブロックの例">
+              <div class="scratch-block hat">define function <span class="slot">damage</span> args schema <span class="slot json">{"power":number,"armor":number}</span></div>
+              <div class="scratch-block">return <span class="slot">(power) − (armor)</span></div>
+            </div>
+            <div class="block-stack" aria-label="Scratchブロックの例">
+              <div class="scratch-block variable"><span class="slot">hp</span>を <span class="slot">0 − (call function damage with {"power":12,"armor":4})</span> ずつ変える</div>
+            </div>
+            <p>
+              関数は独立したスクリプトとして動くため、<strong>call function</strong>は最低1フレームかかります。
+            </p>
+          </article>
+
+          <article class="example-card">
+            <span class="example-type">⇉ 始めて、後で待つ</span>
+            <h3>呼び出しを並べて実行する</h3>
+            <div class="block-stack" aria-label="Scratchブロックの例">
+              <div class="scratch-block variable"><span class="slot">p1</span>を <span class="slot">start function add with {"a":1,"b":2}</span> にする</div>
+              <div class="scratch-block variable"><span class="slot">p2</span>を <span class="slot">start function add with {"a":3,"b":4}</span> にする</div>
+              <div class="scratch-block looks"><span class="slot">await all [p1, p2]</span> と言う</div>
+            </div>
+            <p>
+              <strong>start function</strong>は<code>{"$promise":"p_1"}</code>のようなプロミス参照を返します。<strong>await all</strong>は<code>[3,7]</code>を返し、失敗した呼び出しは<code>{"$error": メッセージ}</code>になります。
+            </p>
+          </article>
+
+          <article class="example-card pose">
+            <span class="example-type">◇ ツールとして公開</span>
+            <h3>AIに得点を読ませる</h3>
+            <div class="block-stack" aria-label="Scratchブロックの例">
+              <div class="scratch-block hat">define function <span class="slot">get_score</span> description <span class="slot">Reports the player’s score.</span> export as <span class="slot">tool</span></div>
+              <div class="scratch-block">return <span class="slot">(score)</span></div>
+            </div>
+            <p>
+              ツールには説明が必要です。モデルが読むのはこの説明です。引数がスキーマに一致していても、ツールの引数は信頼できない入力として扱ってください。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="schemas" aria-labelledby="schemas-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">スキーマ</p>
+            <h2 id="schemas-title">入るものと出るものを宣言する</h2>
+          </div>
+          <p>
+            args schemaはJSON Schemaのオブジェクトで、関数の実行前に小さなインタープリターが検査します（コード生成はしません）。<strong>returns schema</strong>を入力すると戻り値も検査し、空欄なら戻り値は検査しません。
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="info-card">
+            <h3>args schemaの例</h3>
+            <pre class="code-sample"><code>{
+  "type": "object",
+  "properties": {
+    "name":  {"type": "string", "minLength": 1},
+    "score": {"type": "number", "minimum": 0},
+    "tags":  {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["name", "score"],
+  "additionalProperties": false
+}</code></pre>
+          </article>
+          <article class="info-card">
+            <h3>対応キーワード</h3>
+            <p>
+              <code>type</code>、<code>properties</code>、<code>required</code>、<code>additionalProperties</code>（trueまたはfalse）、<code>items</code>、<code>enum</code>、<code>const</code>、<code>minimum</code>、<code>maximum</code>、<code>minLength</code>、<code>maxLength</code>、<code>minItems</code>、<code>maxItems</code>。
+            </p>
+            <ul>
+              <li>その他のキーワードは書けますが、検査は追加されません。</li>
+              <li>args schemaは<code>"type": "object"</code>である必要があります。</li>
+              <li>不正なスキーマの関数は定義されず、<strong>function [NAME] defined?</strong>はfalseを返します。</li>
+              <li>検査に失敗するとJSONパスが示されます（例：<code>$.score must be &gt;= 0</code>）。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="behavior" aria-labelledby="behavior-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">動作</p>
+            <h2 id="behavior-title">タイミング・上限・エラー</h2>
+          </div>
+          <p>
+            関数はブロック定義ではなくスクリプトです。そのため共有でき、非同期に動きますが、使う前に知っておきたい規則もあります。
+          </p>
+        </div>
+
+        <figure class="math-figure">
+          <div class="table-scroll">
+            <table class="math-table behavior-table">
+              <thead><tr><th>状況</th><th>動作</th></tr></thead>
+              <tbody>
+                <tr><td>呼び出しごと</td><td>最低1フレームかかります。細かいループにはブロック定義を使ってください。</td></tr>
+                <tr><td>同じ関数への複数の呼び出し</td><td>順番に1つずつ実行されます。異なる関数は並行して動きます。</td></tr>
+                <tr><td>関数が直接または間接に自分を呼ぶ</td><td>永久に待つ代わりに<code>Reentrant call: a -&gt; b -&gt; a</code>で失敗します。再帰にはブロック定義を使ってください。</td></tr>
+                <tr><td>関数が30秒を超えて動く</td><td>タイムアウトで失敗します。</td></tr>
+                <tr><td>同時に開始した呼び出しが8件を超える</td><td>以降の<strong>start function</strong>は空きが出るまで待ちます。</td></tr>
+                <tr><td>プロジェクトを停止</td><td>実行中の呼び出しは失敗し、プロミス参照は消去されます。</td></tr>
+                <tr><td>同じ名前のハットが2つある、またはハットの入力がリテラルでない</td><td>関数は定義されず、<strong>last function error</strong>が理由を示します。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </figure>
+      </section>
+
+      <section class="section" id="composition" aria-labelledby="composition-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">アプリケーション統合</p>
+            <h2 id="composition-title">自作の拡張機能に同じ関数機能を組み込む</h2>
+          </div>
+          <p>
+            Composition APIを使うと、単体版のブロックを登録せずに、同じレジストリとディスパッチャーを別の拡張機能で利用できます。利用側は自分の<strong>define function</strong>ハットのopcodeを持ち、3つのブロックからAPIへ処理を渡します。
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="info-card">
+            <h3>作成と呼び出し</h3>
+            <pre class="code-sample"><code>import {createNamedFunctions} from
+  '@kubohiroya/turbowarp-named-functions/composition';
+
+const functions = createNamedFunctions({
+  runtime: Scratch.vm.runtime,
+  functionHatOpcode: 'myextension_defineFunction'
+});
+
+const tools = functions.tools();
+const score = await functions.call(
+  'get_score', {}, {exportedOnly: true});
+
+functions.release();</code></pre>
+          </article>
+          <article class="info-card">
+            <h3>利用側が渡すもの</h3>
+            <ul>
+              <li>define functionハットから<code>matchHat(NAME, thread)</code>。</li>
+              <li>引数レポーターから<code>argumentsFor(thread)</code>。</li>
+              <li>returnブロックから<code>returnFrom(thread, value)</code>。</li>
+              <li><code>tools()</code>は公開された関数の一覧を返し、<code>call(…, {exportedOnly: true})</code>は公開されていない関数を拒否します。</li>
+              <li><code>cancelAll(reason)</code>は待機中の呼び出しを失敗させ、<code>release()</code>はランタイムのリスナーも解除します。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="reference" aria-labelledby="reference-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ブロック一覧</p>
+            <h2 id="reference-title">3グループ・11ブロック</h2>
+          </div>
+          <p>
+            すべてのブロック・引数・既定値は、英語版の<a href="../#extension-block-reference">完全なブロックリファレンス</a>に載っています。
+          </p>
+        </div>
+
+        <div class="reference-grid">
+          <article class="reference-card">
+            <h3>定義</h3>
+            <ul>
+              <li><strong>define function …</strong> 名前・説明・args schema・任意のreturns schema・公開方法を宣言します。</li>
+              <li><strong>function argument [PATH]</strong> <code>items.0.name</code>のように引数を1つ読みます。</li>
+              <li><strong>function arguments JSON</strong> すべての引数をJSON文字列で返します。</li>
+              <li><strong>return [VALUE]</strong> 値を返して関数を終えます。</li>
+            </ul>
+          </article>
+          <article class="reference-card">
+            <h3>呼び出し</h3>
+            <ul>
+              <li><strong>call function [NAME] with [ARGS]</strong> 終了を待って結果を返します。</li>
+              <li><strong>start function [NAME] with [ARGS]</strong> すぐにプロミス参照を返します。</li>
+              <li><strong>await [PROMISE]</strong> 開始した呼び出しを1つ待ちます。</li>
+              <li><strong>await all [PROMISES]</strong> プロミス参照のJSON配列をまとめて待ちます。</li>
+            </ul>
+          </article>
+          <article class="reference-card optional">
+            <h3>確認</h3>
+            <ul>
+              <li><strong>[PROMISE] settled?</strong> 待たずに、開始した呼び出しが終わったかを確認します。</li>
+              <li><strong>function [NAME] defined?</strong> 有効なハットがあるかを確認します。</li>
+              <li><strong>last function error</strong> 直近の失敗の理由を返します。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">トラブルシューティング</p>
+            <h2 id="troubleshooting-title">呼び出しが失敗するとき</h2>
+          </div>
+          <p>まず<strong>last function error</strong>を確認してください。各項目を開くと、よくある原因と最短の対処が分かります。</p>
+        </div>
+
+        <div class="faq-list">
+          <details>
+            <summary>function [NAME] defined? がfalseになる</summary>
+            <p>
+              NAME・DESCRIPTION・SCHEMA、および空でないRETURNSは、レポーターで組み立てず、ハットに直接入力してください。名前は1〜64文字の英数字・<code>_</code>・<code>-</code>、スキーマは<code>"type": "object"</code>を持つ正しいJSONである必要があり、同じ名前のハットが他にあってはいけません。
+            </p>
+          </details>
+          <details>
+            <summary>関数が始まる前に呼び出しが失敗する</summary>
+            <p>
+              ARGSはargs schemaに一致するJSON文字列である必要があります。<code>{"a":"1"}</code>は数値ではなく文字列を渡しています。JSONブロックや、正しいJSONになる<strong>join</strong>でARGSを組み立ててください。
+            </p>
+          </details>
+          <details>
+            <summary>自分を呼ぶ関数が「Reentrant call」になる</summary>
+            <p>
+              内側の呼び出しが外側の終了を永久に待つことになるため、名前付き関数を通した再帰は意図的に拒否されます。再帰する処理はブロック定義に書き、関数からそれを呼んでください。
+            </p>
+          </details>
+          <details>
+            <summary>結果が空になる</summary>
+            <p>
+              関数のスクリプトが<strong>return</strong>に到達せずに終わったため、結果は<code>null</code>です。すべての分岐を確認してください。RETURNSを設定している場合、returnがないと<code>null</code>として検査され、失敗することがあります。
+            </p>
+          </details>
+          <details>
+            <summary>関数を呼ぶループが遅い</summary>
+            <p>
+              呼び出しごとに最低1フレームかかります。内側の処理をブロック定義に移すか、<strong>start function</strong>で呼び出しを始めて<strong>await all</strong>でまとめて受け取ってください。
+            </p>
+          </details>
+          <details>
+            <summary>AI拡張機能から関数が見えない</summary>
+            <p>
+              <strong>export as</strong>を<code>tool</code>にし、DESCRIPTIONを入力してください。説明のないツールは定義されません。
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <p>Named Functions · MPL-2.0 · 既定のガイド言語は英語です。</p>
+        <div class="footer-links">
+          <a href="https://github.com/kubohiroya/turbowarp-named-functions">ソースコード</a>
+          <a href="https://github.com/kubohiroya/turbowarp-named-functions/issues">問題を報告</a>
+          <a href="../" lang="en" hreflang="en">English guide</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,16 +1,17 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TurboWarp Named Functions</title>
-  <style>
-    body { font: 16px/1.6 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; color: #1f2328; background: #fff; }
-    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; border-radius: 6px; }
-    @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } pre { background: #161b22; } a { color: #58a6ff; } }
-  </style>
-<style id="block-reference-style">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="User guide for the TurboWarp-Named-Functions extension: define JSON-in, JSON-out functions once, call them by name from any sprite, run calls in parallel, and export them as AI tools.">
+    <meta name="theme-color" content="#8a55d7">
+    <title>Named Functions — User Guide</title>
+    <link rel="canonical" href="https://kubohiroya.github.io/turbowarp-named-functions/">
+    <link rel="alternate" hreflang="en" href="https://kubohiroya.github.io/turbowarp-named-functions/">
+    <link rel="alternate" hreflang="ja" href="https://kubohiroya.github.io/turbowarp-named-functions/ja/">
+    <link rel="alternate" hreflang="x-default" href="https://kubohiroya.github.io/turbowarp-named-functions/">
+    <link rel="stylesheet" href="./assets/styles.css">
+  <style id="block-reference-style">
 #extension-block-reference{max-width:72rem;margin:2rem auto;padding:1rem;line-height:1.6;overflow-wrap:anywhere}
 #extension-block-reference .block-reference-entry{display:block;scroll-margin-top:6rem;margin:2rem 0;padding:1rem;border:1px solid currentColor;border-radius:.5rem}
 #extension-block-reference .block-reference-table{overflow-x:auto}
@@ -20,35 +21,477 @@
 #extension-block-reference a:focus-visible{outline:3px solid currentColor;outline-offset:3px}
 </style>
 </head>
-<body><p lang="en" class="complete-block-reference-link"><a href="#extension-block-reference">Complete block reference (11 blocks)</a></p>
-  <h1>TurboWarp Named Functions</h1>
-  <p>Define functions that take JSON arguments and return JSON results, then call them by name from any script.</p>
+  <body>
+    <a class="skip-link" href="#main">Skip to the guide</a>
+    <header class="app-bar">
+      <div class="app-bar-inner">
+        <a class="app-bar-brand" href="./" aria-label="Named Functions guide home">
+          <span class="app-bar-mark" aria-hidden="true">f</span>
+          <span class="app-bar-label">Named Functions</span>
+        </a>
+        <nav class="app-bar-sections" aria-label="Guide sections">
+          <a href="#quick-start">Quick start</a>
+          <a href="#examples">Examples</a>
+          <a href="#schemas">Schemas</a>
+          <a href="#composition">Composition API</a>
+          <a href="#reference">Reference</a>
+        </nav>
+        <div class="app-bar-actions">
+          <a class="app-bar-github" href="https://github.com/kubohiroya/turbowarp-named-functions" aria-label="Source code and releases on GitHub">GitHub</a>
+          <nav class="app-bar-languages" aria-label="Language">
+            <a aria-current="page" href="./" lang="en" hreflang="en">English</a>
+            <a href="./ja/" lang="ja" hreflang="ja">日本語</a>
+          </nav>
+        </div>
+      </div>
+    </header>
 
-  <h2>Install</h2>
-  <p>Load <a href="https://github.com/kubohiroya/turbowarp-named-functions/blob/main/dist/turbowarp-named-functions.js"><code>turbowarp-named-functions.js</code></a> as a custom extension with <strong>Run without sandbox</strong> enabled.</p>
+    <main id="main"><p lang="en" class="complete-block-reference-link"><a href="#extension-block-reference">Complete block reference (11 blocks)</a></p>
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">TurboWarp extension · User guide</p>
+          <h1 id="hero-title">Write it once. Call it by name.</h1>
+          <p class="lead">
+            Named Functions turns a script into a function with a name, a description, and a JSON
+            Schema for its arguments. Any sprite can call it and get a value back—wait for the
+            result, or start several calls and collect them later. Mark a function as a
+            <strong>tool</strong> and other extensions, such as AI tool calling, can use it too.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#quick-start">Start in four steps</a>
+            <a class="button" href="#examples">See block examples</a>
+          </div>
+        </div>
 
-  <h2>Define and call</h2>
-  <pre>define function [add] description [Adds two numbers.] args schema [{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}] export as [none]
-return ((function argument [a]) + (function argument [b]))
+        <div class="hero-visual function-hero" aria-label="A define function hat in one sprite returns a value to a call function block in another sprite">
+          <div class="function-window" aria-hidden="true">
+            <p class="stack-label">Sprite “Calculator” defines</p>
+            <div class="block-stack">
+              <div class="scratch-block hat">define function <span class="slot">add</span> args schema <span class="slot json">{"a":number,"b":number}</span></div>
+              <div class="scratch-block">return <span class="slot">(a) + (b)</span></div>
+            </div>
+            <p class="stack-label">Sprite “Player” calls</p>
+            <div class="block-stack">
+              <div class="scratch-block event">when green flag clicked</div>
+              <div class="scratch-block looks">say <span class="slot">call function add with {"a":1,"b":2}</span></div>
+            </div>
+            <div class="result-chip"><span>Reported value</span><strong>3</strong></div>
+          </div>
+        </div>
+      </section>
 
-when green flag clicked
-say (call function [add] with [{"a":1,"b":2}])</pre>
-  <p>NAME, DESCRIPTION, and the args schema must be typed directly into the hat. Arguments are checked against the schema before the function runs.</p>
+      <section class="section" id="why" aria-labelledby="why-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Why use it</p>
+            <h2 id="why-title">Custom blocks stop at the sprite boundary</h2>
+          </div>
+          <p>
+            A custom block belongs to one sprite and cannot return a value. Broadcasts reach every
+            sprite but carry no arguments and no result. Named Functions fills the gap: a callable
+            unit that any script can reach, with checked inputs and a real return value.
+          </p>
+        </div>
 
-  <h2>Start several calls, await them later</h2>
-  <pre>set [p1] to (start function [add] with [{"a":1,"b":2}])
-set [p2] to (start function [add] with [{"a":3,"b":4}])
-say (await all (join [[] (join (p1) (join [,] (join (p2) []])))))</pre>
+        <div class="reference-grid">
+          <article class="reference-card">
+            <h3>Share logic across sprites</h3>
+            <p>Keep scoring, inventory, or dialogue rules in one place. Every sprite and the Stage call the same function instead of copying scripts.</p>
+          </article>
+          <article class="reference-card">
+            <h3>Get structured results</h3>
+            <p>Pass JSON in and get JSON out. A function can return a number, text, a list, or an object, and arguments are checked before the script starts.</p>
+          </article>
+          <article class="reference-card optional">
+            <h3>Offer tools to AI</h3>
+            <p>Functions exported as tools are listed in the OpenAI function-calling shape, so an AI extension can see what your project can do and call it.</p>
+          </article>
+        </div>
+      </section>
 
-  <h2>Good to know</h2>
-  <ul>
-    <li>Each call takes at least one frame. Use custom blocks for tight loops and recursion.</li>
-    <li>A function that calls itself, directly or indirectly, fails with a reentrant-call error instead of waiting forever.</li>
-    <li>If something fails, check <code>last function error</code>.</li>
-  </ul>
+      <section class="section" id="quick-start" aria-labelledby="quick-start-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Quick start</p>
+            <h2 id="quick-start-title">Ready in four steps</h2>
+          </div>
+          <p>
+            Functions are found by reading <strong>define function</strong> hats, so there is
+            nothing to register at startup. Place the hat, write the body, and call it.
+          </p>
+        </div>
 
-  <p>Full block reference: <a href="https://github.com/kubohiroya/turbowarp-named-functions#block-reference">README</a>.</p>
-<!-- BEGIN COMPLETE BLOCK REFERENCE -->
+        <ol class="steps">
+          <li>
+            <h3>Load the extension</h3>
+            <p>
+              Load Named Functions as a custom extension with <strong>Run extension without
+              sandbox</strong> enabled. It needs the VM runtime to start function scripts.
+            </p>
+          </li>
+          <li>
+            <h3>Place a define hat</h3>
+            <p>
+              Drag <strong>define function</strong> into any sprite. Type the name, description,
+              and args schema directly into the hat—these fields must be literal text.
+            </p>
+          </li>
+          <li>
+            <h3>Write the body</h3>
+            <p>
+              Read inputs with <strong>function argument</strong> and finish with
+              <strong>return</strong>. A script that ends without <code>return</code> reports
+              <code>null</code>.
+            </p>
+          </li>
+          <li>
+            <h3>Call it anywhere</h3>
+            <p>
+              Use <strong>call function</strong> with JSON arguments from any sprite. The block
+              waits for the function and reports its return value.
+            </p>
+          </li>
+        </ol>
+
+        <figure class="flow-figure">
+          <figcaption class="figure-kicker">What happens during one call</figcaption>
+          <div class="flow" role="img" aria-label="A call checks its arguments, runs the matching define function script, and reports the returned value">
+            <div class="flow-node">
+              <span class="flow-icon" aria-hidden="true">↘</span>
+              <strong>call function</strong>
+              <small>name + JSON arguments</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node">
+              <span class="flow-icon" aria-hidden="true">✓</span>
+              <strong>Check arguments</strong>
+              <small>against the args schema</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node accent">
+              <span class="flow-icon" aria-hidden="true">▶</span>
+              <strong>Run the function</strong>
+              <small>the matching hat’s script</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="flow-node optional">
+              <span class="flow-icon" aria-hidden="true">↩</span>
+              <strong>Report the result</strong>
+              <small>optionally checked by RETURNS</small>
+            </div>
+          </div>
+          <p class="figure-note">
+            Invalid arguments fail before the script starts, and <strong>last function error</strong>
+            names the field that did not match.
+          </p>
+        </figure>
+
+        <div class="callout">
+          <span aria-hidden="true">⚑</span>
+          <div>
+            <strong>Extension URL</strong>
+            <p>
+              Use the version-pinned build:
+              <a href="https://cdn.jsdelivr.net/npm/@kubohiroya/turbowarp-named-functions@0.1.1/dist/turbowarp-named-functions.js"><code>@kubohiroya/turbowarp-named-functions@0.1.1</code></a>.
+              Load extensions only from sources you trust.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="examples" aria-labelledby="examples-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Examples</p>
+            <h2 id="examples-title">Three ways to call a function</h2>
+          </div>
+          <p>
+            Wait for one result, start several calls and collect them together, or let another
+            program decide which function to call.
+          </p>
+        </div>
+
+        <div class="example-grid">
+          <article class="example-card">
+            <span class="example-type">↩ Call and wait</span>
+            <h3>Compute a damage value</h3>
+            <div class="block-stack" aria-label="Example Scratch block stack">
+              <div class="scratch-block hat">define function <span class="slot">damage</span> args schema <span class="slot json">{"power":number,"armor":number}</span></div>
+              <div class="scratch-block">return <span class="slot">(power) − (armor)</span></div>
+            </div>
+            <div class="block-stack" aria-label="Example Scratch block stack">
+              <div class="scratch-block variable">change <span class="slot">hp</span> by <span class="slot">0 − (call function damage with {"power":12,"armor":4})</span></div>
+            </div>
+            <p>
+              <strong>call function</strong> takes at least one frame, because the function runs as
+              its own script.
+            </p>
+          </article>
+
+          <article class="example-card">
+            <span class="example-type">⇉ Start, then await</span>
+            <h3>Run calls side by side</h3>
+            <div class="block-stack" aria-label="Example Scratch block stack">
+              <div class="scratch-block variable">set <span class="slot">p1</span> to <span class="slot">start function add with {"a":1,"b":2}</span></div>
+              <div class="scratch-block variable">set <span class="slot">p2</span> to <span class="slot">start function add with {"a":3,"b":4}</span></div>
+              <div class="scratch-block looks">say <span class="slot">await all [p1, p2]</span></div>
+            </div>
+            <p>
+              <strong>start function</strong> reports a promise reference such as
+              <code>{"$promise":"p_1"}</code>. <strong>await all</strong> reports
+              <code>[3,7]</code>; a failed call becomes <code>{"$error": message}</code>.
+            </p>
+          </article>
+
+          <article class="example-card pose">
+            <span class="example-type">◇ Export as tool</span>
+            <h3>Let an AI read the score</h3>
+            <div class="block-stack" aria-label="Example Scratch block stack">
+              <div class="scratch-block hat">define function <span class="slot">get_score</span> description <span class="slot">Reports the player’s score.</span> export as <span class="slot">tool</span></div>
+              <div class="scratch-block">return <span class="slot">(score)</span></div>
+            </div>
+            <p>
+              A tool needs a description—it is what the model reads. Treat tool arguments as
+              untrusted input, even though they match the schema.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="schemas" aria-labelledby="schemas-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Schemas</p>
+            <h2 id="schemas-title">Say what goes in—and what comes out</h2>
+          </div>
+          <p>
+            The args schema is a JSON Schema object, checked by a small interpreter—no code is
+            generated—before the function runs. Fill in <strong>returns schema</strong> to check the
+            return value as well, or leave it blank to skip return checks.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="info-card">
+            <h3>An args schema</h3>
+            <pre class="code-sample"><code>{
+  "type": "object",
+  "properties": {
+    "name":  {"type": "string", "minLength": 1},
+    "score": {"type": "number", "minimum": 0},
+    "tags":  {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["name", "score"],
+  "additionalProperties": false
+}</code></pre>
+          </article>
+          <article class="info-card">
+            <h3>Supported keywords</h3>
+            <p>
+              <code>type</code>, <code>properties</code>, <code>required</code>,
+              <code>additionalProperties</code> (true or false), <code>items</code>,
+              <code>enum</code>, <code>const</code>, <code>minimum</code>, <code>maximum</code>,
+              <code>minLength</code>, <code>maxLength</code>, <code>minItems</code>, and
+              <code>maxItems</code>.
+            </p>
+            <ul>
+              <li>Other keywords are allowed but add no checks.</li>
+              <li>The args schema must have <code>"type": "object"</code>.</li>
+              <li>A malformed schema leaves the function undefined, so <strong>function [NAME] defined?</strong> reports false.</li>
+              <li>A failed check names the JSON path, such as <code>$.score must be &gt;= 0</code>.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="behavior" aria-labelledby="behavior-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Behavior</p>
+            <h2 id="behavior-title">Timing, limits, and errors</h2>
+          </div>
+          <p>
+            Functions are scripts, not custom blocks. That makes them shareable and asynchronous,
+            and it also sets a few rules worth knowing before you build on them.
+          </p>
+        </div>
+
+        <figure class="math-figure">
+          <div class="table-scroll">
+            <table class="math-table behavior-table">
+              <thead><tr><th>Situation</th><th>What happens</th></tr></thead>
+              <tbody>
+                <tr><td>Each call</td><td>Takes at least one frame. Use custom blocks for tight loops.</td></tr>
+                <tr><td>Several calls to one function</td><td>Run one at a time, in order. Different functions run concurrently.</td></tr>
+                <tr><td>A function calls itself, directly or indirectly</td><td>Fails with <code>Reentrant call: a -&gt; b -&gt; a</code> instead of waiting forever. Use a custom block for recursion.</td></tr>
+                <tr><td>A function runs longer than 30 seconds</td><td>The call fails with a timeout.</td></tr>
+                <tr><td>More than 8 started calls at once</td><td>Further <strong>start function</strong> calls wait for a free slot.</td></tr>
+                <tr><td>The project stops</td><td>Running calls fail and promise references are cleared.</td></tr>
+                <tr><td>Two hats with the same name, or non-literal hat fields</td><td>The function is not defined; <strong>last function error</strong> explains why.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </figure>
+      </section>
+
+      <section class="section" id="composition" aria-labelledby="composition-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Application integration</p>
+            <h2 id="composition-title">Bundle the same functions into your own extension</h2>
+          </div>
+          <p>
+            The Composition API gives another extension the same registry and dispatcher without
+            registering the standalone blocks. The consumer owns its own <strong>define function</strong>
+            hat opcode and forwards three blocks to it.
+          </p>
+        </div>
+
+        <div class="two-column">
+          <article class="info-card">
+            <h3>Create and call</h3>
+            <pre class="code-sample"><code>import {createNamedFunctions} from
+  '@kubohiroya/turbowarp-named-functions/composition';
+
+const functions = createNamedFunctions({
+  runtime: Scratch.vm.runtime,
+  functionHatOpcode: 'myextension_defineFunction'
+});
+
+const tools = functions.tools();
+const score = await functions.call(
+  'get_score', {}, {exportedOnly: true});
+
+functions.release();</code></pre>
+          </article>
+          <article class="info-card">
+            <h3>What the consumer forwards</h3>
+            <ul>
+              <li><code>matchHat(NAME, thread)</code> from its define function hat.</li>
+              <li><code>argumentsFor(thread)</code> from its argument reporter.</li>
+              <li><code>returnFrom(thread, value)</code> from its return block.</li>
+              <li><code>tools()</code> lists exported functions; <code>call(…, {exportedOnly: true})</code> refuses anything not exported.</li>
+              <li><code>cancelAll(reason)</code> fails pending calls; <code>release()</code> also detaches runtime listeners.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="reference" aria-labelledby="reference-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Block reference</p>
+            <h2 id="reference-title">Eleven blocks in three groups</h2>
+          </div>
+          <p>
+            Every block, argument, and default value is listed in the
+            <a href="#extension-block-reference">complete block reference</a> below.
+          </p>
+        </div>
+
+        <div class="reference-grid">
+          <article class="reference-card">
+            <h3>Define</h3>
+            <ul>
+              <li><strong>define function …</strong> declares a name, description, args schema, optional returns schema, and export mode.</li>
+              <li><strong>function argument [PATH]</strong> reads one argument, such as <code>items.0.name</code>.</li>
+              <li><strong>function arguments JSON</strong> reports every argument as JSON text.</li>
+              <li><strong>return [VALUE]</strong> ends the function with a value.</li>
+            </ul>
+          </article>
+          <article class="reference-card">
+            <h3>Call</h3>
+            <ul>
+              <li><strong>call function [NAME] with [ARGS]</strong> waits and reports the result.</li>
+              <li><strong>start function [NAME] with [ARGS]</strong> reports a promise reference immediately.</li>
+              <li><strong>await [PROMISE]</strong> waits for one started call.</li>
+              <li><strong>await all [PROMISES]</strong> waits for a JSON array of started calls.</li>
+            </ul>
+          </article>
+          <article class="reference-card optional">
+            <h3>Inspect</h3>
+            <ul>
+              <li><strong>[PROMISE] settled?</strong> checks a started call without waiting.</li>
+              <li><strong>function [NAME] defined?</strong> checks that a valid hat exists.</li>
+              <li><strong>last function error</strong> explains the most recent failure.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Troubleshooting</p>
+            <h2 id="troubleshooting-title">If a call fails</h2>
+          </div>
+          <p>Check <strong>last function error</strong> first. Open each item for the most common cause and the shortest fix.</p>
+        </div>
+
+        <div class="faq-list">
+          <details>
+            <summary>function [NAME] defined? reports false</summary>
+            <p>
+              NAME, DESCRIPTION, SCHEMA, and a non-empty RETURNS must be typed into the hat, not
+              built from reporters. The name must be 1–64 letters, digits, <code>_</code>, or
+              <code>-</code>, the schema must be valid JSON with <code>"type": "object"</code>, and
+              no other hat may use the same name.
+            </p>
+          </details>
+          <details>
+            <summary>The call fails before the function starts</summary>
+            <p>
+              ARGS must be JSON text that matches the args schema. <code>{"a":"1"}</code> passes a
+              string, not a number. Build ARGS with JSON blocks or a <strong>join</strong> that
+              produces valid JSON.
+            </p>
+          </details>
+          <details>
+            <summary>A function that calls itself reports “Reentrant call”</summary>
+            <p>
+              Recursion through named functions is rejected on purpose, because the inner call would
+              wait for the outer one forever. Put recursive logic in a custom block and call that
+              from the function.
+            </p>
+          </details>
+          <details>
+            <summary>The result is empty</summary>
+            <p>
+              The function script ended without reaching <strong>return</strong>, so the result is
+              <code>null</code>. Check every branch. If RETURNS is set, a missing return is checked
+              as <code>null</code> and may fail.
+            </p>
+          </details>
+          <details>
+            <summary>A loop that calls a function is slow</summary>
+            <p>
+              Each call takes at least one frame. Move the inner work into a custom block, or start
+              the calls with <strong>start function</strong> and collect them with
+              <strong>await all</strong>.
+            </p>
+          </details>
+          <details>
+            <summary>An AI extension cannot see my function</summary>
+            <p>
+              Set <strong>export as</strong> to <code>tool</code> and fill in DESCRIPTION. A tool
+              without a description is not defined.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <p>Named Functions · MPL-2.0 · English is the default guide language.</p>
+        <div class="footer-links">
+          <a href="https://github.com/kubohiroya/turbowarp-named-functions">Source</a>
+          <a href="https://github.com/kubohiroya/turbowarp-named-functions/issues">Report an issue</a>
+          <a href="./ja/" lang="ja" hreflang="ja">日本語ガイド</a>
+        </div>
+      </div>
+    </footer>
+  <!-- BEGIN COMPLETE BLOCK REFERENCE -->
 <section lang="en" id="extension-block-reference" aria-labelledby="block-reference-title">
 <h2 id="block-reference-title">Named Functions: complete block reference</h2>
 <p>All 11 blocks are documented below, including compatibility blocks and blocks available through optional features. Select a block to read its behavior, arguments, default values, and menu choices. Each block has a permanent link.</p>
@@ -64,7 +507,7 @@ say (await all (join [[] (join (p1) (join [,] (join (p2) []])))))</pre>
 <li><a href="#block-isDefined"><code>function [NAME] defined?</code></a></li>
 <li><a href="#block-lastError"><code>last function error</code></a></li>
 </ul></nav>
-<article id="block-defineFunction" class="block-reference-entry"><h3><code>define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]</code></h3><p>Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.</p><p>Block type: HAT. Opcode: <code>defineFunction</code>. <a href="#block-defineFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>DESCRIPTION</code></th><td>STRING</td><td><code>Adds two numbers.</code></td><td></td></tr><tr><th scope="row"><code>SCHEMA</code></th><td>STRING</td><td><code>{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;a&quot;:{&quot;type&quot;:&quot;number&quot;},&quot;b&quot;:{&quot;type&quot;:&quot;number&quot;}},&quot;required&quot;:[&quot;a&quot;,&quot;b&quot;]}</code></td><td></td></tr><tr><th scope="row"><code>RETURNS</code></th><td>STRING</td><td><code></code></td><td></td></tr><tr><th scope="row"><code>EXPORT</code></th><td>STRING</td><td><code>none</code></td><td><ul><li><code>none</code></li><li><code>tool</code></li></ul></td></tr></tbody></table></div><!-- BEGIN FIXED INPUT HELP --><p id="fixed-input-defineFunction-EXPORT" class="fixed-input-editor">HATのEXPORTはnone・toolから選択します。関数やHATを実行せずにこの保存値だけを編集し、NAME・DESCRIPTION・SCHEMA・RETURNSを変更しません。 GUIのDialogsとFixedInputsは起動時の既定OFFです。両方を有効にして再読込すると固定フォームが使えます。未変更のraw値を保存し直さず、接続reporterは評価しません。</p><!-- END FIXED INPUT HELP --></article><article id="block-functionArgument" class="block-reference-entry"><h3><code>function argument [PATH]</code></h3><p>Inside a function, reports the argument at a dotted path such as a or items.0.name.</p><p>Block type: REPORTER. Opcode: <code>functionArgument</code>. <a href="#block-functionArgument">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PATH</code></th><td>STRING</td><td><code>a</code></td><td></td></tr></tbody></table></div></article><article id="block-functionArgumentsJson" class="block-reference-entry"><h3><code>function arguments JSON</code></h3><p>Inside a function, reports all arguments as JSON text.</p><p>Block type: REPORTER. Opcode: <code>functionArgumentsJson</code>. <a href="#block-functionArgumentsJson">Permanent link</a></p><p>This block has no arguments.</p></article><article id="block-returnValue" class="block-reference-entry"><h3><code>return [VALUE]</code></h3><p>Inside a function, returns a value and ends the script. JSON text is returned as JSON; other text is returned as a string.</p><p>Block type: COMMAND. Opcode: <code>returnValue</code>. <a href="#block-returnValue">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>VALUE</code></th><td>STRING</td><td><code>0</code></td><td></td></tr></tbody></table></div></article><article id="block-callFunction" class="block-reference-entry"><h3><code>call function [NAME] with [ARGS]</code></h3><p>Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.</p><p>Block type: REPORTER. Opcode: <code>callFunction</code>. <a href="#block-callFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>ARGS</code></th><td>STRING</td><td><code>{&quot;a&quot;:1,&quot;b&quot;:2}</code></td><td></td></tr></tbody></table></div></article><article id="block-startFunction" class="block-reference-entry"><h3><code>start function [NAME] with [ARGS]</code></h3><p>Starts a function without waiting and reports a promise reference as JSON text.</p><p>Block type: REPORTER. Opcode: <code>startFunction</code>. <a href="#block-startFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>ARGS</code></th><td>STRING</td><td><code>{&quot;a&quot;:1,&quot;b&quot;:2}</code></td><td></td></tr></tbody></table></div></article><article id="block-awaitResult" class="block-reference-entry"><h3><code>await [PROMISE]</code></h3><p>Waits for a promise reference from start function and reports its result.</p><p>Block type: REPORTER. Opcode: <code>awaitResult</code>. <a href="#block-awaitResult">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISE</code></th><td>STRING</td><td><code>{&quot;$promise&quot;:&quot;p_1&quot;}</code></td><td></td></tr></tbody></table></div></article><article id="block-awaitAll" class="block-reference-entry"><h3><code>await all [PROMISES]</code></h3><p>Waits for a JSON array of promise references and reports a JSON array of results. Failed calls become {&quot;$error&quot;: message}.</p><p>Block type: REPORTER. Opcode: <code>awaitAll</code>. <a href="#block-awaitAll">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISES</code></th><td>STRING</td><td><code>[]</code></td><td></td></tr></tbody></table></div></article><article id="block-isSettled" class="block-reference-entry"><h3><code>[PROMISE] settled?</code></h3><p>Reports whether a started function has finished, without waiting.</p><p>Block type: BOOLEAN. Opcode: <code>isSettled</code>. <a href="#block-isSettled">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISE</code></th><td>STRING</td><td><code>{&quot;$promise&quot;:&quot;p_1&quot;}</code></td><td></td></tr></tbody></table></div></article><article id="block-isDefined" class="block-reference-entry"><h3><code>function [NAME] defined?</code></h3><p>Reports whether a valid define function hat with this name exists.</p><p>Block type: BOOLEAN. Opcode: <code>isDefined</code>. <a href="#block-isDefined">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr></tbody></table></div></article><article id="block-lastError" class="block-reference-entry"><h3><code>last function error</code></h3><p>Reports the most recent function error, or an empty string.</p><p>Block type: REPORTER. Opcode: <code>lastError</code>. <a href="#block-lastError">Permanent link</a></p><p>This block has no arguments.</p></article>
+<article id="block-defineFunction" class="block-reference-entry"><h3><code>define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]</code></h3><p>Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.</p><p>Block type: HAT. Opcode: <code>defineFunction</code>. <a href="#block-defineFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>DESCRIPTION</code></th><td>STRING</td><td><code>Adds two numbers.</code></td><td></td></tr><tr><th scope="row"><code>SCHEMA</code></th><td>STRING</td><td><code>{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;a&quot;:{&quot;type&quot;:&quot;number&quot;},&quot;b&quot;:{&quot;type&quot;:&quot;number&quot;}},&quot;required&quot;:[&quot;a&quot;,&quot;b&quot;]}</code></td><td></td></tr><tr><th scope="row"><code>RETURNS</code></th><td>STRING</td><td><code></code></td><td></td></tr><tr><th scope="row"><code>EXPORT</code></th><td>STRING</td><td><code>none</code></td><td><ul><li><code>none</code></li><li><code>tool</code></li></ul></td></tr></tbody></table></div><!-- BEGIN FIXED INPUT HELP --><p id="fixed-input-defineFunction-EXPORT" class="fixed-input-editor">In the fixed-input editor, EXPORT is chosen from none or tool. The editor changes only this stored value; it does not run the function or the hat, and it leaves NAME, DESCRIPTION, SCHEMA, and RETURNS unchanged. The GUI Dialogs and FixedInputs startup flags are OFF by default; enable both and reload to use the form. Unchanged raw values are not rewritten, and connected reporters are not evaluated.</p><!-- END FIXED INPUT HELP --></article><article id="block-functionArgument" class="block-reference-entry"><h3><code>function argument [PATH]</code></h3><p>Inside a function, reports the argument at a dotted path such as a or items.0.name.</p><p>Block type: REPORTER. Opcode: <code>functionArgument</code>. <a href="#block-functionArgument">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PATH</code></th><td>STRING</td><td><code>a</code></td><td></td></tr></tbody></table></div></article><article id="block-functionArgumentsJson" class="block-reference-entry"><h3><code>function arguments JSON</code></h3><p>Inside a function, reports all arguments as JSON text.</p><p>Block type: REPORTER. Opcode: <code>functionArgumentsJson</code>. <a href="#block-functionArgumentsJson">Permanent link</a></p><p>This block has no arguments.</p></article><article id="block-returnValue" class="block-reference-entry"><h3><code>return [VALUE]</code></h3><p>Inside a function, returns a value and ends the script. JSON text is returned as JSON; other text is returned as a string.</p><p>Block type: COMMAND. Opcode: <code>returnValue</code>. <a href="#block-returnValue">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>VALUE</code></th><td>STRING</td><td><code>0</code></td><td></td></tr></tbody></table></div></article><article id="block-callFunction" class="block-reference-entry"><h3><code>call function [NAME] with [ARGS]</code></h3><p>Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.</p><p>Block type: REPORTER. Opcode: <code>callFunction</code>. <a href="#block-callFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>ARGS</code></th><td>STRING</td><td><code>{&quot;a&quot;:1,&quot;b&quot;:2}</code></td><td></td></tr></tbody></table></div></article><article id="block-startFunction" class="block-reference-entry"><h3><code>start function [NAME] with [ARGS]</code></h3><p>Starts a function without waiting and reports a promise reference as JSON text.</p><p>Block type: REPORTER. Opcode: <code>startFunction</code>. <a href="#block-startFunction">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr><tr><th scope="row"><code>ARGS</code></th><td>STRING</td><td><code>{&quot;a&quot;:1,&quot;b&quot;:2}</code></td><td></td></tr></tbody></table></div></article><article id="block-awaitResult" class="block-reference-entry"><h3><code>await [PROMISE]</code></h3><p>Waits for a promise reference from start function and reports its result.</p><p>Block type: REPORTER. Opcode: <code>awaitResult</code>. <a href="#block-awaitResult">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISE</code></th><td>STRING</td><td><code>{&quot;$promise&quot;:&quot;p_1&quot;}</code></td><td></td></tr></tbody></table></div></article><article id="block-awaitAll" class="block-reference-entry"><h3><code>await all [PROMISES]</code></h3><p>Waits for a JSON array of promise references and reports a JSON array of results. Failed calls become {&quot;$error&quot;: message}.</p><p>Block type: REPORTER. Opcode: <code>awaitAll</code>. <a href="#block-awaitAll">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISES</code></th><td>STRING</td><td><code>[]</code></td><td></td></tr></tbody></table></div></article><article id="block-isSettled" class="block-reference-entry"><h3><code>[PROMISE] settled?</code></h3><p>Reports whether a started function has finished, without waiting.</p><p>Block type: BOOLEAN. Opcode: <code>isSettled</code>. <a href="#block-isSettled">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>PROMISE</code></th><td>STRING</td><td><code>{&quot;$promise&quot;:&quot;p_1&quot;}</code></td><td></td></tr></tbody></table></div></article><article id="block-isDefined" class="block-reference-entry"><h3><code>function [NAME] defined?</code></h3><p>Reports whether a valid define function hat with this name exists.</p><p>Block type: BOOLEAN. Opcode: <code>isDefined</code>. <a href="#block-isDefined">Permanent link</a></p><div class="block-reference-table"><table><thead><tr><th>Argument</th><th>Type</th><th>Default value</th><th>Menu choices</th></tr></thead><tbody><tr><th scope="row"><code>NAME</code></th><td>STRING</td><td><code>add</code></td><td></td></tr></tbody></table></div></article><article id="block-lastError" class="block-reference-entry"><h3><code>last function error</code></h3><p>Reports the most recent function error, or an empty string.</p><p>Block type: REPORTER. Opcode: <code>lastError</code>. <a href="#block-lastError">Permanent link</a></p><p>This block has no arguments.</p></article>
 <p><a href="https://github.com/kubohiroya/turbowarp-named-functions/blob/main/README.md">Repository guide and examples</a></p>
 </section>
 <!-- END COMPLETE BLOCK REFERENCE -->

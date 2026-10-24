@@ -4,7 +4,7 @@
 
 A TurboWarp extension for defining named functions that take JSON arguments and return JSON results. Scripts can call them by name, wait for the result, or start several calls and await them later. Functions can be marked for export as tools so that other extensions, such as AI tool calling, can use them.
 
-**User guide:** [English](https://kubohiroya.github.io/turbowarp-named-functions/)
+**User guide:** [English](https://kubohiroya.github.io/turbowarp-named-functions/) | [日本語](https://kubohiroya.github.io/turbowarp-named-functions/ja/)
 
 ## What it does
 
@@ -290,14 +290,14 @@ SCRATCH_VM_PATH=/path/to/TurboWarp/scratch-vm pnpm test
 
 [Mozilla Public License 2.0](LICENSE) (SPDX: `MPL-2.0`).
 
-## 固定引数の編集フォーム（S3-4）
+## Fixed-input editing form
 
-共通エディターの起動時フラグ `blockEditorFixedInputs` とDialogsがONのGUIでは、`defineFunction` の `EXPORT` だけを固定フォームとして登録します。旧GUI・フラグOFFでは追加登録を行いません。Schemaの正本は `schemas/block-editor-fixed-inputs.schema.json#/$defs/defineFunction/properties/EXPORT`、codecと登録は `src/fixed-input-editors.ts` です。既存raw値・未変更alias・未知enumは無操作保存で書き換えず、reporterを評価しません。明示変更だけを検査し、他の引数やブロック宣言、保存形式を変更しません。
+When the shared editor's `blockEditorFixedInputs` startup flag and Dialogs are both ON in the GUI, only the `EXPORT` input of `defineFunction` is registered as a fixed-input form. An older GUI, or a GUI with the flag OFF, registers nothing extra. The canonical Schema is `schemas/block-editor-fixed-inputs.schema.json#/$defs/defineFunction/properties/EXPORT`; the codec and registration live in `src/fixed-input-editors.ts`. Existing raw values, unchanged aliases, and unknown enum values are not rewritten by a save without edits, and reporters are not evaluated. Only explicit changes are validated, and other arguments, block declarations, and the saved format are left unchanged.
 
-HATの直付けEXPORT dropdownはnone/toolを保存値として使用します。NAME/DESCRIPTION/SCHEMA/RETURNSを編集・実行せず、関数探索・HAT開始・tool公開はフォームの検査から呼びません。
+The hat's inline EXPORT dropdown stores `none` or `tool`. The form does not edit or run NAME, DESCRIPTION, SCHEMA, or RETURNS, and its validation never scans functions, starts hats, or publishes tools.
 
-登録はoptional API（apiVersion:1）に限定し、RUNTIME_DISPOSED/明示disposeで解除します。起動フラグOFF＋再読込で従来経路へ切り戻せます。依存を戻す場合はmanifest/lock/実解決を一組で復旧します。npm公開や後続段階の動的候補は含みません。
+Registration is limited to the optional API (`apiVersion: 1`) and is removed on `RUNTIME_DISPOSED` or an explicit dispose. Turning the startup flag OFF and reloading restores the previous path. To roll back the dependency, restore the manifest, the lockfile, and the actual resolution together. This does not include npm publishing or the dynamic candidates planned for later stages.
 
-Schemaが記述する契約の根拠は実getInfoの宣言と既存の純粋なruntime変換です。SchemaBundleのretrievalUriはこのローカル文書の識別子であり、URL配信済み・HTTP取得によるref解決を意味しません。Schemaは同梱文書だけでcompileします。
+The contract described by the Schema is grounded in the real `getInfo` declarations and the existing pure runtime conversion. The SchemaBundle `retrievalUri` identifies this local document only; it does not mean the Schema is served from that URL or that `$ref`s are resolved over HTTP. The Schema compiles from the bundled documents alone.
 
 Registration uses the optional editor API available when the extension instance is constructed. Adding or replacing that API later is not followed automatically; reload the GUI and reconstruct the extension instance after changing the startup configuration.
