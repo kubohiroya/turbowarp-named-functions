@@ -202,6 +202,17 @@ lower object properties and required fields, primitive types, arrays and items, 
 constraints into the same canonical JSON Schema object consumed by `validateAgainstSchema`; it
 should not introduce a second validation format or change existing JSON-text projects.
 
+### Schema identity with named data
+
+Named-data carries only a structured value's `{id, version}` schema identity; IDs must match
+`^[a-z][a-z0-9.-]{0,127}$` and versions must be complete SemVer values. The consumer owns the
+schema catalog. Resolve the exact identity before validating the returned JSON value with
+`validateAgainstSchema`. An unknown ID or version must fail explicitly, with no fallback to a
+different version. This package continues to use inline canonical JSON Schema for function
+arguments and returns. Its supported subset is `type`, `properties`, `required`,
+`additionalProperties` (boolean), `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`,
+`maxLength`, `minItems`, and `maxItems`; other keywords do not add validation behavior.
+
 ## Composition API
 
 Importing the Composition API does not register the standalone TurboWarp extension. The consumer

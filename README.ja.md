@@ -188,6 +188,10 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 
 初回は既存のJSON文字列入力を維持します。将来の視覚Schemaビルダーは、object/property/required、primitive型、array/items、enum、基本制約を同じcanonical JSON Schemaへ変換し、`validateAgainstSchema`を共通の検証境界として使う設計です。既存のJSON手入力プロジェクトも同じ形式のまま使えます。
 
+### named dataとのSchema identity
+
+named-dataが運ぶのはstructured valueの`{id, version}` identityだけです。IDは`^[a-z][a-z0-9.-]{0,127}$`に一致し、versionは完全なSemVerである必要があります。Schema catalogはconsumerが所有します。戻されたJSON値を検証する前にidentityと完全一致するSchemaを解決してください。IDやversionが見つからない場合は明示的に失敗し、別versionへfallbackしません。このpackageの関数引数／戻り値Schemaは引き続きinlineのcanonical JSON Schemaです。対応subsetは`type`、`properties`、`required`、Boolean形式の`additionalProperties`、`items`、`enum`、`const`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`です。その他のkeywordは検証動作を追加しません。
+
 ## Composition API
 
 Composition APIをimportしても、単独のTurboWarp機能拡張は登録されません。利用する側の拡張が自分のブロックと`define function`ハットのopcodeを持ち、ハットの条件判定と、引数・戻り値のブロックの処理をこのAPIに渡します。使い方は[英語版README](README.md#composition-api)を参照してください。
