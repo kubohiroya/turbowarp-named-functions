@@ -197,6 +197,10 @@ define schema [Player] version [1.0.0]
 
 ネストしたobjectやarrayのpropertyは別の名前付きSchemaを参照できるようにし、同じSchemaを関数の引数・戻り値・名前付きデータに選べるようにします。ブロック列は`validateAgainstSchema`が扱うcanonical JSON Schemaへ変換し、別の検証形式を作らず、既存のJSON文字列プロジェクトもそのまま使います。これはブロック仕様案であり、まだ実装されていません。実装境界はSchema定義と変換層です。リテラルのブロック項目を読み、重複・不正な定義を報告してcanonical schemaを生成します。Schema読み込み時に任意のブロックを実行しません。ブロックのmutation UIやネストSchemaの編集体験は別の実装作業です。
 
+### named dataとのSchema identity
+
+named-dataが運ぶのはstructured valueの`{id, version}` identityだけです。IDは`^[a-z][a-z0-9.-]{0,127}$`に一致し、versionは完全なSemVerである必要があります。Schema catalogはconsumerが所有します。戻されたJSON値を検証する前にidentityと完全一致するSchemaを解決してください。IDやversionが見つからない場合は明示的に失敗し、別versionへfallbackしません。このpackageの関数引数／戻り値Schemaは引き続きinlineのcanonical JSON Schemaです。対応subsetは`type`、`properties`、`required`、Boolean形式の`additionalProperties`、`items`、`enum`、`const`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`です。その他のkeywordは検証動作を追加しません。
+
 ## Composition API
 
 Composition APIをimportしても、単独のTurboWarp機能拡張は登録されません。利用する側の拡張が自分のブロックと`define function`ハットのopcodeを持ち、ハットの条件判定と、引数・戻り値のブロックの処理をこのAPIに渡します。使い方は[英語版README](README.md#composition-api)を参照してください。
