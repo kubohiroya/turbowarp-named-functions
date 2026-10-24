@@ -216,6 +216,17 @@ layer: it reads literal block fields, reports duplicate/invalid definitions, and
 canonical schema. It does not execute arbitrary blocks while loading a schema. Editor block
 mutation and nested-schema UX remain separate implementation work.
 
+### Schema identity with named data
+
+Named-data carries only a structured value's `{id, version}` schema identity; IDs must match
+`^[a-z][a-z0-9.-]{0,127}$` and versions must be complete SemVer values. The consumer owns the
+schema catalog. Resolve the exact identity before validating the returned JSON value with
+`validateAgainstSchema`. An unknown ID or version must fail explicitly, with no fallback to a
+different version. This package continues to use inline canonical JSON Schema for function
+arguments and returns. Its supported subset is `type`, `properties`, `required`,
+`additionalProperties` (boolean), `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`,
+`maxLength`, `minItems`, and `maxItems`; other keywords do not add validation behavior.
+
 ## Composition API
 
 Importing the Composition API does not register the standalone TurboWarp extension. The consumer
