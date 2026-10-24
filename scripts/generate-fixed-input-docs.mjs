@@ -6,12 +6,12 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 const opcode = "defineFunction";
 const argument = "EXPORT";
 const pages = ["site/index.html"];
-const help = "HATのEXPORTはnone・toolから選択します。関数やHATを実行せずにこの保存値だけを編集し、NAME・DESCRIPTION・SCHEMA・RETURNSを変更しません。";
+const help = "In the fixed-input editor, EXPORT is chosen from none or tool. The editor changes only this stored value; it does not run the function or the hat, and it leaves NAME, DESCRIPTION, SCHEMA, and RETURNS unchanged.";
 const root = new URL('../', import.meta.url);
 const check = process.argv.includes('--check');
 const start = '<!-- BEGIN FIXED INPUT HELP -->';
 const end = '<!-- END FIXED INPUT HELP -->';
-const body = `${start}<p id="fixed-input-${opcode}-${argument}" class="fixed-input-editor">${help} GUIのDialogsとFixedInputsは起動時の既定OFFです。両方を有効にして再読込すると固定フォームが使えます。未変更のraw値を保存し直さず、接続reporterは評価しません。</p>${end}`;
+const body = `${start}<p id="fixed-input-${opcode}-${argument}" class="fixed-input-editor">${help} The GUI Dialogs and FixedInputs startup flags are OFF by default; enable both and reload to use the form. Unchanged raw values are not rewritten, and connected reporters are not evaluated.</p>${end}`;
 for (const page of pages) {
   const target = new URL(page, root);
   const current = await readFile(target, 'utf8');

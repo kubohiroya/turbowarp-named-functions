@@ -48,8 +48,9 @@
     "docs": "node scripts/generate-readme.ts && node scripts/generate-fixed-input-docs.mjs",
     "docs:check": "node scripts/generate-readme.ts --check && node scripts/generate-fixed-input-docs.mjs --check",
     "repo:check": "node scripts/check-repo.ts",
+    "site:check": "node scripts/check-site.ts",
     "pack:check": "npm pack --dry-run --ignore-scripts",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run docs:check && pnpm run check:dist && pnpm run types:composition:check && pnpm run repo:check && pnpm run pack:check",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run docs:check && pnpm run site:check && pnpm run check:dist && pnpm run types:composition:check && pnpm run repo:check && pnpm run pack:check",
     "check:dist": "pnpm run build && node scripts/check-dist.ts",
     "types:composition:check": "tsc --project tsconfig.composition-consumer.json"
   },

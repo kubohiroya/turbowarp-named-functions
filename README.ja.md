@@ -4,7 +4,7 @@
 
 JSONの引数を受け取りJSONの結果を返す「名前を持つ関数」を定義するTurboWarp機能拡張です。スクリプトから名前で呼び出して結果を待つことも、いくつか開始しておいてあとでまとめて待つこともできます。ツールとして公開する印を付けると、AIのツール呼び出しなど、ほかの拡張から使えるようになります。
 
-**利用ガイド:** [English](https://kubohiroya.github.io/turbowarp-named-functions/)
+**利用ガイド:** [English](https://kubohiroya.github.io/turbowarp-named-functions/) | [日本語](https://kubohiroya.github.io/turbowarp-named-functions/ja/)
 
 ## できること
 
