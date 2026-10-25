@@ -22,9 +22,16 @@ export interface FunctionScan {
     functions: FunctionDefinition[];
     errors: string[];
 }
+export interface FunctionScanOptions {
+    /**
+     * Resolves a schema name typed into SCHEMA or RETURNS instead of JSON text, such as a
+     * `define schema` hat's name. Without it, those inputs must be JSON.
+     */
+    resolveSchema?: (reference: string, label: string) => Record<string, unknown>;
+}
 /**
  * Reads every `define function` hat in the project. NAME, DESCRIPTION, and SCHEMA are part of the
  * tool contract sent to the model before any script runs, so they must be literal text.
  */
-export declare function scanFunctionDefinitions(targets: readonly RuntimeTarget[], hatOpcode: string): FunctionScan;
+export declare function scanFunctionDefinitions(targets: readonly RuntimeTarget[], hatOpcode: string, options?: FunctionScanOptions): FunctionScan;
 export declare function toFunctionTools(functions: readonly FunctionDefinition[]): FunctionTool[];

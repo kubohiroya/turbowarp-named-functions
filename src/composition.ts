@@ -12,11 +12,26 @@ import {
   type FunctionScan,
   type FunctionTool
 } from './function-registry.js';
+import {
+  resolveSchemaReference,
+  scanSchemaDefinitions,
+  type SchemaBlockOpcodes,
+  type SchemaScan
+} from './schema-builder.js';
 import type {RuntimeLike, RuntimeThread} from './runtime-types.js';
 import {validateAgainstSchema} from './schema-validator.js';
 
-export type {FunctionDefinition, FunctionScan, FunctionTool} from './function-registry.js';
+export type {FunctionDefinition, FunctionScan, FunctionScanOptions, FunctionTool} from './function-registry.js';
 export {FUNCTION_NAME_PATTERN, scanFunctionDefinitions, toFunctionTools} from './function-registry.js';
+export type {SchemaBlockOpcodes, SchemaDefinition, SchemaReference, SchemaScan} from './schema-builder.js';
+export {
+  MAX_SCHEMA_REFERENCE_DEPTH,
+  SCHEMA_NAME_PATTERN,
+  SCHEMA_VERSION_PATTERN,
+  parseSchemaReference,
+  resolveSchemaReference,
+  scanSchemaDefinitions
+} from './schema-builder.js';
 export type {RuntimeLike, RuntimeThread, BlockUtilityLike} from './runtime-types.js';
 export {parseJsonOrText, readArgumentPath, toScratchValue} from './function-dispatcher.js';
 export {validateAgainstSchema, validateSchemaDefinition} from './schema-validator.js';
@@ -36,6 +51,11 @@ export interface NamedFunctionsOptions {
   runtime: RuntimeLike;
   /** Opcode of the consumer extension's `define function` hat, e.g. `myextension_defineFunction`. */
   functionHatOpcode: string;
+  /**
+   * Opcodes of the consumer extension's visual schema-builder blocks. When omitted, SCHEMA and
+   * RETURNS accept JSON text only, exactly as before.
+   */
+  schemaBlockOpcodes?: SchemaBlockOpcodes;
   timeoutMs?: number;
   /** Maximum concurrently running `start`ed calls; further starts wait for a slot. Default 8. */
   maxInFlight?: number;
@@ -47,6 +67,8 @@ export interface NamedFunctionsOptions {
 
 export interface NamedFunctions {
   scan(): FunctionScan;
+  /** `define schema` hats lowered to canonical JSON Schema. Empty without `schemaBlockOpcodes`. */
+  schemas(): SchemaScan;
   /** Functions exported as tools, in OpenAI function-calling shape. Throws if any definition is invalid. */
   tools(): FunctionTool[];
   isDefined(name: string): boolean;
@@ -102,13 +124,26 @@ class NamedFunctionsImpl implements NamedFunctions {
   }
 
   public scan(): FunctionScan {
-    return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode);
+    const opcodes = this.options.schemaBlockOpcodes;
+    if (!opcodes) {
+      return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode);
+    }
+    const schemas = this.schemas().schemas;
+    return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode, {
+      resolveSchema: (reference, label) => resolveSchemaReference(schemas, reference, label)
+    });
+  }
+
+  public schemas(): SchemaScan {
+    const opcodes = this.options.schemaBlockOpcodes;
+    if (!opcodes) return {schemas: [], errors: []};
+    return scanSchemaDefinitions(this.options.runtime.targets, opcodes);
   }
 
   public tools(): FunctionTool[] {
-    const scan = this.scan();
-    if (scan.errors.length > 0) throw new Error(`Invalid function definitions: ${scan.errors.join('; ')}`);
-    return toFunctionTools(scan.functions);
+    const errors = [...this.schemas().errors, ...this.scan().errors];
+    if (errors.length > 0) throw new Error(`Invalid function definitions: ${errors.join('; ')}`);
+    return toFunctionTools(this.scan().functions);
   }
 
   public isDefined(name: string): boolean {

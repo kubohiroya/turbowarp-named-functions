@@ -5,9 +5,11 @@ import {
   createNamedFunctions,
   parseJsonOrText,
   readArgumentPath,
+  resolveSchemaReference,
   toScratchValue,
   type NamedFunctions,
-  type NamedFunctionsOptions
+  type NamedFunctionsOptions,
+  type SchemaBlockOpcodes
 } from './composition.js';
 import type {BlockUtilityLike} from './runtime-types.js';
 
@@ -36,6 +38,18 @@ const blockDefinitions = definitions.blocks as readonly BlockDefinition[];
 const menuDefinitions = definitions.menus as Record<string, MenuDefinition>;
 
 export const DEFINE_FUNCTION_OPCODE = `${extensionConfig.id}_defineFunction`;
+export const DEFINE_SCHEMA_OPCODE = `${extensionConfig.id}_defineSchema`;
+
+/** Opcodes of the blocks that make up a `define schema` stack. */
+export const SCHEMA_BLOCK_OPCODES: SchemaBlockOpcodes = {
+  hat: DEFINE_SCHEMA_OPCODE,
+  property: `${extensionConfig.id}_schemaProperty`,
+  propertySchema: `${extensionConfig.id}_schemaPropertySchema`,
+  propertyArraySchema: `${extensionConfig.id}_schemaPropertyArraySchema`,
+  constraint: `${extensionConfig.id}_schemaConstraint`,
+  allowedValues: `${extensionConfig.id}_schemaAllowedValues`,
+  additionalProperties: `${extensionConfig.id}_schemaAdditionalProperties`
+};
 
 export type NamedFunctionsExtensionDependencies = Omit<NamedFunctionsOptions, 'functionHatOpcode'>;
 
@@ -53,7 +67,11 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
       typeof Scratch === 'undefined' ? {} : Scratch, fixedInputEditorDefinitions, deps.runtime
     );
     try {
-      this.functions = createNamedFunctions({...deps, functionHatOpcode: DEFINE_FUNCTION_OPCODE});
+      this.functions = createNamedFunctions({
+        ...deps,
+        functionHatOpcode: DEFINE_FUNCTION_OPCODE,
+        schemaBlockOpcodes: SCHEMA_BLOCK_OPCODES
+      });
     } catch (error) {
       this.unregisterFixedInputEditors();
       throw error;
@@ -84,6 +102,50 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
 
   public defineFunction(args: Args, util?: Util): boolean {
     return this.functions.matchHat(Scratch.Cast.toString(args.NAME), util?.thread);
+  }
+
+  /**
+   * A `define schema` stack is a declaration, not a script: the hat never activates, and the blocks
+   * under it do nothing if a user clicks the stack.
+   */
+  public defineSchema(): boolean {
+    return false;
+  }
+
+  public schemaProperty(): void {}
+
+  public schemaPropertySchema(): void {}
+
+  public schemaPropertyArraySchema(): void {}
+
+  public schemaConstraint(): void {}
+
+  public schemaAllowedValues(): void {}
+
+  public schemaAdditionalProperties(): void {}
+
+  public schemaJson(args: Args): string {
+    return this.guard('', () => {
+      const scan = this.functions.schemas();
+      try {
+        return JSON.stringify(
+          resolveSchemaReference(scan.schemas, Scratch.Cast.toString(args.NAME), 'schema name')
+        );
+      } catch (error) {
+        // A schema that failed to load is simply absent, so name the definition errors as well.
+        if (scan.errors.length === 0) throw error;
+        throw new Error(`${messageOf(error)} (invalid schema definitions: ${scan.errors.join('; ')})`);
+      }
+    });
+  }
+
+  public isSchemaDefined(args: Args): boolean {
+    try {
+      resolveSchemaReference(this.functions.schemas().schemas, Scratch.Cast.toString(args.NAME), 'schema name');
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   public functionArgument(args: Args, util?: Util): string | number | boolean {

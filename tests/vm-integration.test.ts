@@ -71,6 +71,34 @@ function buildProject() {
   blocks.badReturnFn!.inputs = {...(blocks.badReturnFn!.inputs as Record<string, unknown>), RETURNS: [1, [10, '{"type":"number"}']]};
   add('badReturn', {opcode: `${ID}_returnValue`, parent: 'badReturnFn', inputs: {VALUE: [1, [10, 'wrong']]}});
 
+  // define schema [Scored] version [1.0.0] / property [points] type [number] required / limit minimum to 0
+  add('schemaHat', {
+    opcode: `${ID}_defineSchema`,
+    topLevel: true,
+    x: 0,
+    y: 400,
+    next: 'schemaProp',
+    inputs: {NAME: [1, [10, 'Scored']], VERSION: [1, [10, '1.0.0']]}
+  });
+  add('schemaProp', {
+    opcode: `${ID}_schemaProperty`,
+    parent: 'schemaHat',
+    next: 'schemaLimit',
+    inputs: {NAME: [1, [10, 'points']]},
+    fields: {TYPE: ['number', null], PRESENCE: ['required', null]}
+  });
+  add('schemaLimit', {
+    opcode: `${ID}_schemaConstraint`,
+    parent: 'schemaProp',
+    inputs: {VALUE: [1, [4, '0']]},
+    fields: {KEYWORD: ['minimum', null]}
+  });
+
+  // scored: args come from the block-built schema; return (function argument points)
+  define('scoredFn', 'scored', 'Scored', 'scoredReturn');
+  add('scoredArg', {opcode: `${ID}_functionArgument`, parent: 'scoredReturn', inputs: {PATH: [1, [10, 'points']]}});
+  add('scoredReturn', {opcode: `${ID}_returnValue`, parent: 'scoredFn', inputs: {VALUE: [3, 'scoredArg', [10, '']]}});
+
   const base = {
     variables: {},
     lists: {},
@@ -99,6 +127,8 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
     callFunction(args: Record<string, unknown>): Promise<unknown>;
     startFunction(args: Record<string, unknown>): string;
     awaitAll(args: Record<string, unknown>): Promise<string>;
+    schemaJson(args: Record<string, unknown>): string;
+    isSchemaDefined(args: Record<string, unknown>): boolean;
     lastError(): string;
   };
 
@@ -143,6 +173,27 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
   it('rejects a return value that does not match its return schema', async () => {
     await expect(extension.callFunction({NAME: 'badReturn', ARGS: '{}'})).resolves.toBe('');
     expect(extension.lastError()).toContain('Invalid return value for badReturn: $ must be number');
+  });
+
+  it('lowers a define schema stack as the VM serializes it', () => {
+    expect(extension.isSchemaDefined({NAME: 'Scored'})).toBe(true);
+    expect(extension.isSchemaDefined({NAME: 'Scored@1.0.0'})).toBe(true);
+    expect(extension.isSchemaDefined({NAME: 'Missing'})).toBe(false);
+    expect(JSON.parse(extension.schemaJson({NAME: 'Scored'}))).toEqual({
+      type: 'object',
+      properties: {points: {type: 'number', minimum: 0}},
+      required: ['points']
+    });
+  });
+
+  it('validates arguments against a block-built schema named by a function', async () => {
+    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":7}'})).resolves.toBe(7);
+
+    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":-1}'})).resolves.toBe('');
+    expect(extension.lastError()).toContain('Invalid arguments for scored: $.points must be >= 0');
+
+    await expect(extension.callFunction({NAME: 'scored', ARGS: '{}'})).resolves.toBe('');
+    expect(extension.lastError()).toContain('$.points is required');
   });
 
   it('starts several calls and awaits them all', async () => {

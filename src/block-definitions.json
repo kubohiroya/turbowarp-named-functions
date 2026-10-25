@@ -5,8 +5,8 @@
       "opcode": "defineFunction",
       "blockType": "HAT",
       "text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
-      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.",
-      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。RETURNSには任意の戻り値JSON Schemaを指定でき、空欄なら戻り値を検証しません。",
+      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
+      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
       "arguments": {
         "NAME": {
           "type": "STRING",
@@ -28,6 +28,161 @@
           "type": "STRING",
           "defaultValue": "none",
           "menu": "exportModes"
+        }
+      }
+    },
+    {
+      "opcode": "defineSchema",
+      "blockType": "HAT",
+      "text": "define schema [NAME] version [VERSION]",
+      "description": "Declares a named JSON Schema from the property blocks stacked under it. NAME and VERSION must be literal text, and VERSION must be a complete SemVer value. The stack is read as a declaration and never run; the result is the same canonical JSON Schema that schema text produces.",
+      "descriptionJa": "下に積まれたpropertyブロックから、名前付きJSON Schemaを宣言します。NAMEとVERSIONには文字列を直接書く必要があり、VERSIONは完全なSemVer値でなければなりません。この積み木は宣言として読まれるだけで実行されず、結果はSchema文字列と同じcanonical JSON Schemaになります。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "Player"
+        },
+        "VERSION": {
+          "type": "STRING",
+          "defaultValue": "1.0.0"
+        }
+      }
+    },
+    {
+      "opcode": "schemaProperty",
+      "blockType": "COMMAND",
+      "text": "property [NAME] type [TYPE] [PRESENCE]",
+      "description": "Inside a `define schema` stack, declares one property of the schema.",
+      "descriptionJa": "`define schema`の積み木の中で、Schemaのプロパティを1つ宣言します。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "name"
+        },
+        "TYPE": {
+          "type": "STRING",
+          "defaultValue": "string",
+          "menu": "propertyTypes"
+        },
+        "PRESENCE": {
+          "type": "STRING",
+          "defaultValue": "required",
+          "menu": "presenceModes"
+        }
+      }
+    },
+    {
+      "opcode": "schemaPropertySchema",
+      "blockType": "COMMAND",
+      "text": "property [NAME] schema [SCHEMA] [PRESENCE]",
+      "description": "Declares a property whose value follows another named schema. SCHEMA is a `define schema` name, optionally pinned as Name@1.0.0.",
+      "descriptionJa": "別の名前付きSchemaに従う値を持つプロパティを宣言します。SCHEMAには`define schema`の名前を書き、Name@1.0.0の形でバージョンを固定できます。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "profile"
+        },
+        "SCHEMA": {
+          "type": "STRING",
+          "defaultValue": "Profile"
+        },
+        "PRESENCE": {
+          "type": "STRING",
+          "defaultValue": "required",
+          "menu": "presenceModes"
+        }
+      }
+    },
+    {
+      "opcode": "schemaPropertyArraySchema",
+      "blockType": "COMMAND",
+      "text": "property [NAME] array of schema [SCHEMA] [PRESENCE]",
+      "description": "Declares a property holding an array whose items follow another named schema.",
+      "descriptionJa": "項目が別の名前付きSchemaに従う配列を持つプロパティを宣言します。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "items"
+        },
+        "SCHEMA": {
+          "type": "STRING",
+          "defaultValue": "Item"
+        },
+        "PRESENCE": {
+          "type": "STRING",
+          "defaultValue": "optional",
+          "menu": "presenceModes"
+        }
+      }
+    },
+    {
+      "opcode": "schemaConstraint",
+      "blockType": "COMMAND",
+      "text": "limit [KEYWORD] to [VALUE]",
+      "description": "Adds a limit to the property declared just above. `minItems` and `maxItems` apply to an array property itself; the other limits apply to each of its items.",
+      "descriptionJa": "すぐ上で宣言したプロパティに制約を加えます。`minItems`と`maxItems`は配列そのものに、その他の制約は配列の各項目に適用されます。",
+      "arguments": {
+        "KEYWORD": {
+          "type": "STRING",
+          "defaultValue": "minimum",
+          "menu": "constraintKeywords"
+        },
+        "VALUE": {
+          "type": "NUMBER",
+          "defaultValue": "0"
+        }
+      }
+    },
+    {
+      "opcode": "schemaAllowedValues",
+      "blockType": "COMMAND",
+      "text": "allowed values [VALUES]",
+      "description": "Restricts the property declared just above to an enum. VALUES is a JSON array, or a comma-separated list of strings.",
+      "descriptionJa": "すぐ上で宣言したプロパティの値をenumに制限します。VALUESにはJSON配列、またはカンマ区切りの文字列を書きます。",
+      "arguments": {
+        "VALUES": {
+          "type": "STRING",
+          "defaultValue": "red, green, blue"
+        }
+      }
+    },
+    {
+      "opcode": "schemaAdditionalProperties",
+      "blockType": "COMMAND",
+      "text": "allow undeclared properties [ALLOW]",
+      "description": "Sets whether the schema accepts properties it does not declare. Left out, undeclared properties are accepted, as in JSON Schema.",
+      "descriptionJa": "宣言していないプロパティをSchemaが受け入れるかどうかを設定します。省略した場合は、JSON Schemaと同じく受け入れます。",
+      "arguments": {
+        "ALLOW": {
+          "type": "STRING",
+          "defaultValue": "no",
+          "menu": "allowModes"
+        }
+      }
+    },
+    {
+      "opcode": "schemaJson",
+      "blockType": "REPORTER",
+      "text": "schema [NAME] JSON",
+      "description": "Reports the canonical JSON Schema a `define schema` hat lowers to, or an empty string if it is unknown or invalid.",
+      "descriptionJa": "`define schema`ハットが変換されたcanonical JSON Schemaを返します。未定義または不正な場合は空文字列を返します。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "Player"
+        }
+      }
+    },
+    {
+      "opcode": "isSchemaDefined",
+      "blockType": "BOOLEAN",
+      "text": "schema [NAME] defined?",
+      "description": "True when a valid `define schema` hat has that name. A name may be pinned as Name@1.0.0.",
+      "descriptionJa": "その名前の正しい`define schema`ハットがあればtrueを返します。Name@1.0.0の形でバージョンを固定できます。",
+      "arguments": {
+        "NAME": {
+          "type": "STRING",
+          "defaultValue": "Player"
         }
       }
     },
@@ -166,6 +321,48 @@
       "items": [
         "none",
         "tool"
+      ]
+    },
+    "propertyTypes": {
+      "acceptReporters": false,
+      "items": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "null",
+        "object",
+        "array",
+        "array of string",
+        "array of number",
+        "array of integer",
+        "array of boolean",
+        "array of object"
+      ]
+    },
+    "presenceModes": {
+      "acceptReporters": false,
+      "items": [
+        "required",
+        "optional"
+      ]
+    },
+    "constraintKeywords": {
+      "acceptReporters": false,
+      "items": [
+        "minimum",
+        "maximum",
+        "minLength",
+        "maxLength",
+        "minItems",
+        "maxItems"
+      ]
+    },
+    "allowModes": {
+      "acceptReporters": false,
+      "items": [
+        "no",
+        "yes"
       ]
     }
   }

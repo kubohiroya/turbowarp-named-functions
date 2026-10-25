@@ -153,8 +153,8 @@
   			"opcode": "defineFunction",
   			"blockType": "HAT",
   			"text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
-  			"description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.",
-  			"descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。RETURNSには任意の戻り値JSON Schemaを指定でき、空欄なら戻り値を検証しません。",
+  			"description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
+  			"descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
   			"arguments": {
   				"NAME": {
   					"type": "STRING",
@@ -178,6 +178,153 @@
   					"menu": "exportModes"
   				}
   			}
+  		},
+  		{
+  			"opcode": "defineSchema",
+  			"blockType": "HAT",
+  			"text": "define schema [NAME] version [VERSION]",
+  			"description": "Declares a named JSON Schema from the property blocks stacked under it. NAME and VERSION must be literal text, and VERSION must be a complete SemVer value. The stack is read as a declaration and never run; the result is the same canonical JSON Schema that schema text produces.",
+  			"descriptionJa": "下に積まれたpropertyブロックから、名前付きJSON Schemaを宣言します。NAMEとVERSIONには文字列を直接書く必要があり、VERSIONは完全なSemVer値でなければなりません。この積み木は宣言として読まれるだけで実行されず、結果はSchema文字列と同じcanonical JSON Schemaになります。",
+  			"arguments": {
+  				"NAME": {
+  					"type": "STRING",
+  					"defaultValue": "Player"
+  				},
+  				"VERSION": {
+  					"type": "STRING",
+  					"defaultValue": "1.0.0"
+  				}
+  			}
+  		},
+  		{
+  			"opcode": "schemaProperty",
+  			"blockType": "COMMAND",
+  			"text": "property [NAME] type [TYPE] [PRESENCE]",
+  			"description": "Inside a `define schema` stack, declares one property of the schema.",
+  			"descriptionJa": "`define schema`の積み木の中で、Schemaのプロパティを1つ宣言します。",
+  			"arguments": {
+  				"NAME": {
+  					"type": "STRING",
+  					"defaultValue": "name"
+  				},
+  				"TYPE": {
+  					"type": "STRING",
+  					"defaultValue": "string",
+  					"menu": "propertyTypes"
+  				},
+  				"PRESENCE": {
+  					"type": "STRING",
+  					"defaultValue": "required",
+  					"menu": "presenceModes"
+  				}
+  			}
+  		},
+  		{
+  			"opcode": "schemaPropertySchema",
+  			"blockType": "COMMAND",
+  			"text": "property [NAME] schema [SCHEMA] [PRESENCE]",
+  			"description": "Declares a property whose value follows another named schema. SCHEMA is a `define schema` name, optionally pinned as Name@1.0.0.",
+  			"descriptionJa": "別の名前付きSchemaに従う値を持つプロパティを宣言します。SCHEMAには`define schema`の名前を書き、Name@1.0.0の形でバージョンを固定できます。",
+  			"arguments": {
+  				"NAME": {
+  					"type": "STRING",
+  					"defaultValue": "profile"
+  				},
+  				"SCHEMA": {
+  					"type": "STRING",
+  					"defaultValue": "Profile"
+  				},
+  				"PRESENCE": {
+  					"type": "STRING",
+  					"defaultValue": "required",
+  					"menu": "presenceModes"
+  				}
+  			}
+  		},
+  		{
+  			"opcode": "schemaPropertyArraySchema",
+  			"blockType": "COMMAND",
+  			"text": "property [NAME] array of schema [SCHEMA] [PRESENCE]",
+  			"description": "Declares a property holding an array whose items follow another named schema.",
+  			"descriptionJa": "項目が別の名前付きSchemaに従う配列を持つプロパティを宣言します。",
+  			"arguments": {
+  				"NAME": {
+  					"type": "STRING",
+  					"defaultValue": "items"
+  				},
+  				"SCHEMA": {
+  					"type": "STRING",
+  					"defaultValue": "Item"
+  				},
+  				"PRESENCE": {
+  					"type": "STRING",
+  					"defaultValue": "optional",
+  					"menu": "presenceModes"
+  				}
+  			}
+  		},
+  		{
+  			"opcode": "schemaConstraint",
+  			"blockType": "COMMAND",
+  			"text": "limit [KEYWORD] to [VALUE]",
+  			"description": "Adds a limit to the property declared just above. `minItems` and `maxItems` apply to an array property itself; the other limits apply to each of its items.",
+  			"descriptionJa": "すぐ上で宣言したプロパティに制約を加えます。`minItems`と`maxItems`は配列そのものに、その他の制約は配列の各項目に適用されます。",
+  			"arguments": {
+  				"KEYWORD": {
+  					"type": "STRING",
+  					"defaultValue": "minimum",
+  					"menu": "constraintKeywords"
+  				},
+  				"VALUE": {
+  					"type": "NUMBER",
+  					"defaultValue": "0"
+  				}
+  			}
+  		},
+  		{
+  			"opcode": "schemaAllowedValues",
+  			"blockType": "COMMAND",
+  			"text": "allowed values [VALUES]",
+  			"description": "Restricts the property declared just above to an enum. VALUES is a JSON array, or a comma-separated list of strings.",
+  			"descriptionJa": "すぐ上で宣言したプロパティの値をenumに制限します。VALUESにはJSON配列、またはカンマ区切りの文字列を書きます。",
+  			"arguments": { "VALUES": {
+  				"type": "STRING",
+  				"defaultValue": "red, green, blue"
+  			} }
+  		},
+  		{
+  			"opcode": "schemaAdditionalProperties",
+  			"blockType": "COMMAND",
+  			"text": "allow undeclared properties [ALLOW]",
+  			"description": "Sets whether the schema accepts properties it does not declare. Left out, undeclared properties are accepted, as in JSON Schema.",
+  			"descriptionJa": "宣言していないプロパティをSchemaが受け入れるかどうかを設定します。省略した場合は、JSON Schemaと同じく受け入れます。",
+  			"arguments": { "ALLOW": {
+  				"type": "STRING",
+  				"defaultValue": "no",
+  				"menu": "allowModes"
+  			} }
+  		},
+  		{
+  			"opcode": "schemaJson",
+  			"blockType": "REPORTER",
+  			"text": "schema [NAME] JSON",
+  			"description": "Reports the canonical JSON Schema a `define schema` hat lowers to, or an empty string if it is unknown or invalid.",
+  			"descriptionJa": "`define schema`ハットが変換されたcanonical JSON Schemaを返します。未定義または不正な場合は空文字列を返します。",
+  			"arguments": { "NAME": {
+  				"type": "STRING",
+  				"defaultValue": "Player"
+  			} }
+  		},
+  		{
+  			"opcode": "isSchemaDefined",
+  			"blockType": "BOOLEAN",
+  			"text": "schema [NAME] defined?",
+  			"description": "True when a valid `define schema` hat has that name. A name may be pinned as Name@1.0.0.",
+  			"descriptionJa": "その名前の正しい`define schema`ハットがあればtrueを返します。Name@1.0.0の形でバージョンを固定できます。",
+  			"arguments": { "NAME": {
+  				"type": "STRING",
+  				"defaultValue": "Player"
+  			} }
   		},
   		{
   			"opcode": "functionArgument",
@@ -296,10 +443,48 @@
   			"arguments": {}
   		}
   	],
-  	menus: { "exportModes": {
-  		"acceptReporters": false,
-  		"items": ["none", "tool"]
-  	} }
+  	menus: {
+  		"exportModes": {
+  			"acceptReporters": false,
+  			"items": ["none", "tool"]
+  		},
+  		"propertyTypes": {
+  			"acceptReporters": false,
+  			"items": [
+  				"string",
+  				"number",
+  				"integer",
+  				"boolean",
+  				"null",
+  				"object",
+  				"array",
+  				"array of string",
+  				"array of number",
+  				"array of integer",
+  				"array of boolean",
+  				"array of object"
+  			]
+  		},
+  		"presenceModes": {
+  			"acceptReporters": false,
+  			"items": ["required", "optional"]
+  		},
+  		"constraintKeywords": {
+  			"acceptReporters": false,
+  			"items": [
+  				"minimum",
+  				"maximum",
+  				"minLength",
+  				"maxLength",
+  				"minItems",
+  				"maxItems"
+  			]
+  		},
+  		"allowModes": {
+  			"acceptReporters": false,
+  			"items": ["no", "yes"]
+  		}
+  	}
   };
   //#endregion
   //#region src/schema-validator.ts
@@ -562,6 +747,46 @@
   	}
   }
   //#endregion
+  //#region src/block-literals.ts
+  function readLiteralInput(block, blocks, inputName) {
+  	const input = block.inputs?.[inputName];
+  	if (!input) throw new Error(`${inputName} is missing`);
+  	if (input.block && input.block !== input.shadow) throw new Error(`${inputName} must be literal text, not a reporter block`);
+  	const shadowId = input.shadow ?? input.block;
+  	const shadow = shadowId ? blocks[shadowId] : void 0;
+  	const field = shadow?.fields ? Object.values(shadow.fields)[0] : void 0;
+  	if (!field) throw new Error(`${inputName} is missing`);
+  	return String(field.value ?? "");
+  }
+  function readOptionalLiteralInput(block, blocks, inputName) {
+  	if (!block.inputs?.[inputName]) return void 0;
+  	return readLiteralInput(block, blocks, inputName);
+  }
+  /** Reads a dropdown that does not accept reporters; the VM stores it as a field on the block. */
+  function readMenuField(block, fieldName) {
+  	const field = block.fields?.[fieldName];
+  	if (!field) throw new Error(`${fieldName} is missing`);
+  	return String(field.value ?? "");
+  }
+  /**
+  * The blocks stacked under `block`, in order. Shadow blocks are skipped, and a `next` chain that
+  * loops or leaves the container stops the walk instead of hanging.
+  */
+  function stackBelow(block, blocks) {
+  	const stack = [];
+  	const seen = /* @__PURE__ */ new Set([block.id]);
+  	let nextId = block.next ?? null;
+  	while (nextId) {
+  		if (seen.has(nextId)) break;
+  		seen.add(nextId);
+  		const next = blocks[nextId];
+  		if (!next) break;
+  		if (next.shadow !== true) stack.push(next);
+  		nextId = next.next ?? null;
+  	}
+  	return stack;
+  }
+  //#endregion
   //#region src/function-registry.ts
   var FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
   var MAX_DESCRIPTION_LENGTH = 1024;
@@ -569,7 +794,7 @@
   * Reads every `define function` hat in the project. NAME, DESCRIPTION, and SCHEMA are part of the
   * tool contract sent to the model before any script runs, so they must be literal text.
   */
-  function scanFunctionDefinitions(targets, hatOpcode) {
+  function scanFunctionDefinitions(targets, hatOpcode, options = {}) {
   	const functions = [];
   	const errors = [];
   	const seen = /* @__PURE__ */ new Map();
@@ -581,7 +806,7 @@
   			if (block.opcode !== hatOpcode || block.topLevel === false) continue;
   			const where = `${targetName} (block ${block.id})`;
   			try {
-  				const definition = readDefinition(block, blocks, targetName);
+  				const definition = readDefinition(block, blocks, targetName, options);
   				const previous = seen.get(definition.name);
   				if (previous !== void 0) throw new Error(`function "${definition.name}" is already defined in ${previous}`);
   				seen.set(definition.name, where);
@@ -605,14 +830,14 @@
   		parameters: definition.parameters
   	}));
   }
-  function readDefinition(block, blocks, targetName) {
+  function readDefinition(block, blocks, targetName, options) {
   	const name = readLiteralInput(block, blocks, "NAME").trim();
   	if (!FUNCTION_NAME_PATTERN.test(name)) throw new Error("function name must be 1-64 letters, digits, \"_\" or \"-\"");
   	const description = readLiteralInput(block, blocks, "DESCRIPTION").trim();
   	if (description.length > 1024) throw new Error(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
-  	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"), "args schema", true);
+  	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"), "args schema", true, options);
   	const returnsText = readOptionalLiteralInput(block, blocks, "RETURNS");
-  	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false);
+  	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false, options);
   	const exportAs = String(block.fields?.EXPORT?.value ?? "none") === "tool" ? "tool" : "none";
   	if (exportAs === "tool" && description.length === 0) throw new Error("a function exported as a tool needs a description");
   	return {
@@ -625,25 +850,17 @@
   		blockId: block.id
   	};
   }
-  function readOptionalLiteralInput(block, blocks, inputName) {
-  	if (!block.inputs?.[inputName]) return void 0;
-  	return readLiteralInput(block, blocks, inputName);
-  }
-  function readLiteralInput(block, blocks, inputName) {
-  	const input = block.inputs?.[inputName];
-  	if (!input) throw new Error(`${inputName} is missing`);
-  	if (input.block && input.block !== input.shadow) throw new Error(`${inputName} must be literal text, not a reporter block`);
-  	const shadowId = input.shadow ?? input.block;
-  	const shadow = shadowId ? blocks[shadowId] : void 0;
-  	const field = shadow?.fields ? Object.values(shadow.fields)[0] : void 0;
-  	if (!field) throw new Error(`${inputName} is missing`);
-  	return String(field.value ?? "");
-  }
-  function parseSchema(text, label, requireObjectType) {
+  /**
+  * SCHEMA and RETURNS hold either JSON Schema text or, when the consumer supports it, the name of a
+  * `define schema` hat. Text that is not JSON is treated as a name, so existing JSON projects are
+  * unaffected.
+  */
+  function parseSchema(text, label, requireObjectType, options) {
   	let value;
   	try {
   		value = JSON.parse(text);
   	} catch {
+  		if (options.resolveSchema) return resolveNamed(text, label, requireObjectType, options.resolveSchema);
   		throw new Error(`${label} must be valid JSON`);
   	}
   	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
@@ -651,6 +868,308 @@
   	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
   	validateSchemaDefinition(schema, label);
   	return schema;
+  }
+  function resolveNamed(text, label, requireObjectType, resolveSchema) {
+  	const schema = resolveSchema(text, label);
+  	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
+  	validateSchemaDefinition(schema, label);
+  	return schema;
+  }
+  //#endregion
+  //#region src/schema-builder.ts
+  /**
+  * Lowers `define schema` block stacks into the canonical JSON Schema objects consumed by
+  * `validateAgainstSchema`.
+  *
+  * The builder is declarative: it reads literal block fields before any script runs and never
+  * executes the blocks it reads. Every schema it produces is checked with `validateSchemaDefinition`,
+  * so a block-built schema and a hand-written JSON one go through one validator and one diagnostic
+  * format.
+  */
+  var SCHEMA_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/u;
+  /** Complete SemVer, as the named-data schema identity contract requires. */
+  var SCHEMA_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+  var PROPERTY_TYPES = {
+  	string: () => ({ type: "string" }),
+  	number: () => ({ type: "number" }),
+  	integer: () => ({ type: "integer" }),
+  	boolean: () => ({ type: "boolean" }),
+  	null: () => ({ type: "null" }),
+  	object: () => ({ type: "object" }),
+  	array: () => ({ type: "array" }),
+  	"array of string": () => ({
+  		type: "array",
+  		items: { type: "string" }
+  	}),
+  	"array of number": () => ({
+  		type: "array",
+  		items: { type: "number" }
+  	}),
+  	"array of integer": () => ({
+  		type: "array",
+  		items: { type: "integer" }
+  	}),
+  	"array of boolean": () => ({
+  		type: "array",
+  		items: { type: "boolean" }
+  	}),
+  	"array of object": () => ({
+  		type: "array",
+  		items: { type: "object" }
+  	})
+  };
+  var CONSTRAINT_KEYWORDS = /* @__PURE__ */ new Set([
+  	"minimum",
+  	"maximum",
+  	"minLength",
+  	"maxLength",
+  	"minItems",
+  	"maxItems"
+  ]);
+  /** Keywords that describe the array itself rather than each of its items. */
+  var ARRAY_LEVEL_KEYWORDS = /* @__PURE__ */ new Set(["minItems", "maxItems"]);
+  /**
+  * Reads every `define schema` hat in the project and lowers it to a canonical JSON Schema.
+  * A hat that cannot be read is reported in `errors` and left out of `schemas`.
+  */
+  function scanSchemaDefinitions(targets, opcodes) {
+  	const drafts = [];
+  	const errors = [];
+  	const seen = /* @__PURE__ */ new Map();
+  	for (const target of targets) {
+  		if (target.isOriginal === false) continue;
+  		const targetName = target.getName?.() ?? (target.isStage ? "Stage" : "sprite");
+  		const blocks = target.blocks._blocks;
+  		for (const block of Object.values(blocks)) {
+  			if (block.opcode !== opcodes.hat || block.topLevel === false) continue;
+  			const where = `${targetName} (block ${block.id})`;
+  			try {
+  				const draft = readDraft(block, blocks, opcodes, targetName);
+  				const key = `${draft.name}@${draft.version}`;
+  				const previous = seen.get(key);
+  				if (previous !== void 0) throw new Error(`schema "${key}" is already defined in ${previous}`);
+  				seen.set(key, where);
+  				drafts.push(draft);
+  			} catch (error) {
+  				errors.push(`${where}: ${messageOf$2(error)}`);
+  			}
+  		}
+  	}
+  	const byKey = new Map(drafts.map((draft) => [`${draft.name}@${draft.version}`, draft]));
+  	const schemas = [];
+  	for (const draft of drafts) try {
+  		const schema = lowerDraft(draft, byKey, []);
+  		validateSchemaDefinition(schema, `schema ${draft.name}`);
+  		schemas.push({
+  			name: draft.name,
+  			version: draft.version,
+  			schema,
+  			targetName: draft.targetName,
+  			blockId: draft.blockId
+  		});
+  	} catch (error) {
+  		errors.push(`${draft.targetName} (block ${draft.blockId}): ${messageOf$2(error)}`);
+  	}
+  	schemas.sort((left, right) => compare(`${left.name}@${left.version}`, `${right.name}@${right.version}`));
+  	return {
+  		schemas,
+  		errors
+  	};
+  }
+  /** Parses `Name` or `Name@1.2.3`. */
+  function parseSchemaReference(text, label) {
+  	const trimmed = text.trim();
+  	const at = trimmed.lastIndexOf("@");
+  	const name = at > 0 ? trimmed.slice(0, at) : trimmed;
+  	const version = at > 0 ? trimmed.slice(at + 1) : void 0;
+  	if (!SCHEMA_NAME_PATTERN.test(name)) throw new Error(`${label} must be 1-128 letters, digits, ".", "_" or "-"`);
+  	if (version !== void 0 && !SCHEMA_VERSION_PATTERN.test(version)) throw new Error(`${label} version "${version}" must be a complete SemVer value such as 1.0.0`);
+  	return version === void 0 ? { name } : {
+  		name,
+  		version
+  	};
+  }
+  /**
+  * Resolves a `Name` or `Name@1.2.3` reference against scanned schemas. An unknown name or version
+  * fails; a name with several versions and no pinned version is ambiguous rather than guessed.
+  */
+  function resolveSchemaReference(schemas, text, label) {
+  	const reference = parseSchemaReference(text, label);
+  	const matches = schemas.filter((candidate) => candidate.name === reference.name);
+  	if (matches.length === 0) throw new Error(`${label} refers to unknown schema "${reference.name}"`);
+  	if (reference.version !== void 0) {
+  		const exact = matches.find((candidate) => candidate.version === reference.version);
+  		if (!exact) {
+  			const available = matches.map((candidate) => candidate.version).join(", ");
+  			throw new Error(`${label} refers to unknown version "${reference.version}" of schema "${reference.name}" (defined: ${available})`);
+  		}
+  		return exact.schema;
+  	}
+  	if (matches.length > 1) {
+  		const available = matches.map((candidate) => candidate.version).join(", ");
+  		throw new Error(`${label} refers to schema "${reference.name}", which has several versions (${available}); pin one as "${reference.name}@${matches[0]?.version}"`);
+  	}
+  	return matches[0].schema;
+  }
+  function readDraft(hat, blocks, opcodes, targetName) {
+  	const name = readLiteralInput(hat, blocks, "NAME").trim();
+  	if (!SCHEMA_NAME_PATTERN.test(name)) throw new Error("schema name must be 1-128 letters, digits, \".\", \"_\" or \"-\"");
+  	const version = readLiteralInput(hat, blocks, "VERSION").trim();
+  	if (!SCHEMA_VERSION_PATTERN.test(version)) throw new Error(`schema version "${version}" must be a complete SemVer value such as 1.0.0`);
+  	const draft = {
+  		name,
+  		version,
+  		properties: [],
+  		targetName,
+  		blockId: hat.id
+  	};
+  	const declared = /* @__PURE__ */ new Set();
+  	for (const block of stackBelow(hat, blocks)) if (block.opcode === opcodes.property) draft.properties.push(readProperty(block, blocks, declared));
+  	else if (block.opcode === opcodes.propertySchema || block.opcode === opcodes.propertyArraySchema) draft.properties.push(readReferenceProperty(block, blocks, declared, block.opcode === opcodes.propertyArraySchema));
+  	else if (block.opcode === opcodes.constraint) applyConstraint(block, blocks, draft);
+  	else if (block.opcode === opcodes.allowedValues) applyAllowedValues(block, blocks, draft);
+  	else if (block.opcode === opcodes.additionalProperties) {
+  		if (draft.additionalProperties !== void 0) throw new Error("\"allow undeclared properties\" is used more than once in this schema");
+  		draft.additionalProperties = readMenuField(block, "ALLOW") === "yes";
+  	} else throw new Error(`${block.opcode} cannot be used inside a "define schema" stack`);
+  	return draft;
+  }
+  function readProperty(block, blocks, declared) {
+  	const name = readPropertyName(block, blocks, declared);
+  	const typeName = readMenuField(block, "TYPE");
+  	const build = PROPERTY_TYPES[typeName];
+  	if (!build) throw new Error(`property "${name}" has unsupported type "${typeName}"`);
+  	return {
+  		name,
+  		required: readPresence(block),
+  		schema: build()
+  	};
+  }
+  function readReferenceProperty(block, blocks, declared, asArray) {
+  	const name = readPropertyName(block, blocks, declared);
+  	const reference = parseSchemaReference(readLiteralInput(block, blocks, "SCHEMA"), `property "${name}" schema`);
+  	return {
+  		name,
+  		required: readPresence(block),
+  		reference,
+  		referenceIsArray: asArray
+  	};
+  }
+  function readPropertyName(block, blocks, declared) {
+  	const name = readLiteralInput(block, blocks, "NAME").trim();
+  	if (name.length === 0) throw new Error("a property needs a name");
+  	if (declared.has(name)) throw new Error(`property "${name}" is declared more than once`);
+  	declared.add(name);
+  	return name;
+  }
+  function readPresence(block) {
+  	return readMenuField(block, "PRESENCE") === "required";
+  }
+  function applyConstraint(block, blocks, draft) {
+  	const keyword = readMenuField(block, "KEYWORD");
+  	if (!CONSTRAINT_KEYWORDS.has(keyword)) throw new Error(`unsupported limit "${keyword}"`);
+  	const target = constraintTarget(draft, `limit "${keyword}"`, keyword);
+  	const raw = readLiteralInput(block, blocks, "VALUE").trim();
+  	const value = Number(raw);
+  	if (raw.length === 0 || !Number.isFinite(value)) throw new Error(`limit "${keyword}" needs a number, not "${raw}"`);
+  	if (target[keyword] !== void 0) throw new Error(`limit "${keyword}" is set more than once on property "${lastProperty(draft).name}"`);
+  	target[keyword] = value;
+  }
+  function applyAllowedValues(block, blocks, draft) {
+  	const target = constraintTarget(draft, "\"allowed values\"", "enum");
+  	const property = lastProperty(draft);
+  	if (target.enum !== void 0) throw new Error(`"allowed values" is set more than once on property "${property.name}"`);
+  	const values = parseAllowedValues(readLiteralInput(block, blocks, "VALUES"), property.name);
+  	const type = target.type;
+  	if (type !== void 0) {
+  		for (const value of values) if (validateAgainstSchema(value, { type }).length > 0) throw new Error(`allowed value ${JSON.stringify(value)} does not match the declared type of property "${property.name}"`);
+  	}
+  	target.enum = values;
+  }
+  /**
+  * Where a limit or an allowed-values list belongs. For an array property the item keywords describe
+  * each item, while `minItems`/`maxItems` describe the array.
+  */
+  function constraintTarget(draft, label, keyword) {
+  	const property = lastProperty(draft, label);
+  	if (!property.schema) throw new Error(`${label} cannot be used on property "${property.name}", which uses another schema`);
+  	if (!(property.schema.type === "array")) {
+  		if (ARRAY_LEVEL_KEYWORDS.has(keyword)) throw new Error(`${label} can only be used on an array property, not "${property.name}"`);
+  		return property.schema;
+  	}
+  	if (ARRAY_LEVEL_KEYWORDS.has(keyword)) return property.schema;
+  	const items = property.schema.items;
+  	if (items === void 0 || typeof items !== "object" || items === null || Array.isArray(items)) throw new Error(`${label} needs property "${property.name}" to declare an item type, such as "array of number"`);
+  	return items;
+  }
+  function lastProperty(draft, label = "this block") {
+  	const property = draft.properties.at(-1);
+  	if (!property) throw new Error(`${label} must come after a property block`);
+  	return property;
+  }
+  /** JSON array text, or a comma-separated list of strings. */
+  function parseAllowedValues(text, propertyName) {
+  	const trimmed = text.trim();
+  	if (trimmed.length === 0) throw new Error(`"allowed values" for property "${propertyName}" is empty`);
+  	if (trimmed.startsWith("[")) {
+  		let parsed;
+  		try {
+  			parsed = JSON.parse(trimmed);
+  		} catch {
+  			throw new Error(`"allowed values" for property "${propertyName}" must be valid JSON`);
+  		}
+  		if (!Array.isArray(parsed) || parsed.length === 0) throw new Error(`"allowed values" for property "${propertyName}" must be a non-empty JSON array`);
+  		return parsed;
+  	}
+  	const values = trimmed.split(",").map((value) => value.trim()).filter((value) => value.length > 0);
+  	if (values.length === 0) throw new Error(`"allowed values" for property "${propertyName}" is empty`);
+  	return values;
+  }
+  function lowerDraft(draft, byKey, stack) {
+  	const key = `${draft.name}@${draft.version}`;
+  	if (stack.includes(key)) throw new Error(`schema reference cycle: ${[...stack, key].join(" -> ")}`);
+  	if (stack.length >= 16) throw new Error(`schema references nest deeper than 16 levels`);
+  	const nextStack = [...stack, key];
+  	const properties = {};
+  	const required = [];
+  	for (const property of draft.properties) {
+  		properties[property.name] = property.reference ? lowerReference(property, draft, byKey, nextStack) : property.schema;
+  		if (property.required) required.push(property.name);
+  	}
+  	return {
+  		type: "object",
+  		properties,
+  		...required.length > 0 ? { required } : {},
+  		...draft.additionalProperties === void 0 ? {} : { additionalProperties: draft.additionalProperties }
+  	};
+  }
+  function lowerReference(property, draft, byKey, stack) {
+  	const reference = property.reference;
+  	const lowered = lowerDraft(findDraft(byKey, reference, `property "${property.name}" of schema ${draft.name}`), byKey, stack);
+  	return property.referenceIsArray ? {
+  		type: "array",
+  		items: lowered
+  	} : lowered;
+  }
+  function findDraft(byKey, reference, label) {
+  	if (reference.version !== void 0) {
+  		const exact = byKey.get(`${reference.name}@${reference.version}`);
+  		if (!exact) throw new Error(`${label} refers to unknown schema "${reference.name}@${reference.version}"`);
+  		return exact;
+  	}
+  	const matches = [...byKey.values()].filter((candidate) => candidate.name === reference.name);
+  	if (matches.length === 0) throw new Error(`${label} refers to unknown schema "${reference.name}"`);
+  	if (matches.length > 1) {
+  		const available = matches.map((candidate) => candidate.version).join(", ");
+  		throw new Error(`${label} refers to schema "${reference.name}", which has several versions (${available}); pin one as "${reference.name}@${matches[0]?.version}"`);
+  	}
+  	return matches[0];
+  }
+  function compare(left, right) {
+  	return left < right ? -1 : left > right ? 1 : 0;
+  }
+  function messageOf$2(error) {
+  	return error instanceof Error ? error.message : String(error);
   }
   //#endregion
   //#region src/composition.ts
@@ -684,12 +1203,22 @@
   		options.runtime.on("PROJECT_STOP_ALL", () => this.promises.clear());
   	}
   	scan() {
-  		return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode);
+  		if (!this.options.schemaBlockOpcodes) return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode);
+  		const schemas = this.schemas().schemas;
+  		return scanFunctionDefinitions(this.options.runtime.targets, this.options.functionHatOpcode, { resolveSchema: (reference, label) => resolveSchemaReference(schemas, reference, label) });
+  	}
+  	schemas() {
+  		const opcodes = this.options.schemaBlockOpcodes;
+  		if (!opcodes) return {
+  			schemas: [],
+  			errors: []
+  		};
+  		return scanSchemaDefinitions(this.options.runtime.targets, opcodes);
   	}
   	tools() {
-  		const scan = this.scan();
-  		if (scan.errors.length > 0) throw new Error(`Invalid function definitions: ${scan.errors.join("; ")}`);
-  		return toFunctionTools(scan.functions);
+  		const errors = [...this.schemas().errors, ...this.scan().errors];
+  		if (errors.length > 0) throw new Error(`Invalid function definitions: ${errors.join("; ")}`);
+  		return toFunctionTools(this.scan().functions);
   	}
   	isDefined(name) {
   		return this.scan().functions.some((definition) => definition.name === name.trim());
@@ -776,6 +1305,16 @@
   var blockDefinitions = block_definitions_default.blocks;
   var menuDefinitions = block_definitions_default.menus;
   var DEFINE_FUNCTION_OPCODE = `${extensionConfig.id}_defineFunction`;
+  /** Opcodes of the blocks that make up a `define schema` stack. */
+  var SCHEMA_BLOCK_OPCODES = {
+  	hat: `${extensionConfig.id}_defineSchema`,
+  	property: `${extensionConfig.id}_schemaProperty`,
+  	propertySchema: `${extensionConfig.id}_schemaPropertySchema`,
+  	propertyArraySchema: `${extensionConfig.id}_schemaPropertyArraySchema`,
+  	constraint: `${extensionConfig.id}_schemaConstraint`,
+  	allowedValues: `${extensionConfig.id}_schemaAllowedValues`,
+  	additionalProperties: `${extensionConfig.id}_schemaAdditionalProperties`
+  };
   /** Block surface over the named-functions composition. */
   var NamedFunctionsExtension = class {
   	constructor(deps) {
@@ -784,7 +1323,8 @@
   		try {
   			this.functions = createNamedFunctions({
   				...deps,
-  				functionHatOpcode: DEFINE_FUNCTION_OPCODE
+  				functionHatOpcode: DEFINE_FUNCTION_OPCODE,
+  				schemaBlockOpcodes: SCHEMA_BLOCK_OPCODES
   			});
   		} catch (error) {
   			this.unregisterFixedInputEditors();
@@ -809,6 +1349,38 @@
   	}
   	defineFunction(args, util) {
   		return this.functions.matchHat(Scratch.Cast.toString(args.NAME), util?.thread);
+  	}
+  	/**
+  	* A `define schema` stack is a declaration, not a script: the hat never activates, and the blocks
+  	* under it do nothing if a user clicks the stack.
+  	*/
+  	defineSchema() {
+  		return false;
+  	}
+  	schemaProperty() {}
+  	schemaPropertySchema() {}
+  	schemaPropertyArraySchema() {}
+  	schemaConstraint() {}
+  	schemaAllowedValues() {}
+  	schemaAdditionalProperties() {}
+  	schemaJson(args) {
+  		return this.guard("", () => {
+  			const scan = this.functions.schemas();
+  			try {
+  				return JSON.stringify(resolveSchemaReference(scan.schemas, Scratch.Cast.toString(args.NAME), "schema name"));
+  			} catch (error) {
+  				if (scan.errors.length === 0) throw error;
+  				throw new Error(`${messageOf(error)} (invalid schema definitions: ${scan.errors.join("; ")})`);
+  			}
+  		});
+  	}
+  	isSchemaDefined(args) {
+  		try {
+  			resolveSchemaReference(this.functions.schemas().schemas, Scratch.Cast.toString(args.NAME), "schema name");
+  			return true;
+  		} catch {
+  			return false;
+  		}
   	}
   	functionArgument(args, util) {
   		return this.guard("", () => toScratchValue(readArgumentPath(this.functions.argumentsFor(util?.thread), Scratch.Cast.toString(args.PATH))));
