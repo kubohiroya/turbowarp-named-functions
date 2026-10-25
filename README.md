@@ -69,7 +69,7 @@ generated section manually.
 
 ### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RETURNS is an optional JSON Schema for the return value; leave it blank to disable return validation.
+Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.
 
 | Property | Value |
 |---|---|
@@ -80,6 +80,104 @@ Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. RE
 | `SCHEMA` | String, default: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
 | `RETURNS` | String, default: `` |
 | `EXPORT` | String, default: `none`, choices: `none`, `tool` |
+
+### `define schema [NAME] version [VERSION]`
+
+Declares a named JSON Schema from the property blocks stacked under it. NAME and VERSION must be literal text, and VERSION must be a complete SemVer value. The stack is read as a declaration and never run; the result is the same canonical JSON Schema that schema text produces.
+
+| Property | Value |
+|---|---|
+| Type | Hat |
+| Opcode | `defineSchema` |
+| `NAME` | String, default: `Player` |
+| `VERSION` | String, default: `1.0.0` |
+
+### `property [NAME] type [TYPE] [PRESENCE]`
+
+Inside a `define schema` stack, declares one property of the schema.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaProperty` |
+| `NAME` | String, default: `name` |
+| `TYPE` | String, default: `string`, choices: `string`, `number`, `integer`, `boolean`, `null`, `object`, `array`, `array of string`, `array of number`, `array of integer`, `array of boolean`, `array of object` |
+| `PRESENCE` | String, default: `required`, choices: `required`, `optional` |
+
+### `property [NAME] schema [SCHEMA] [PRESENCE]`
+
+Declares a property whose value follows another named schema. SCHEMA is a `define schema` name, optionally pinned as Name@1.0.0.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaPropertySchema` |
+| `NAME` | String, default: `profile` |
+| `SCHEMA` | String, default: `Profile` |
+| `PRESENCE` | String, default: `required`, choices: `required`, `optional` |
+
+### `property [NAME] array of schema [SCHEMA] [PRESENCE]`
+
+Declares a property holding an array whose items follow another named schema.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaPropertyArraySchema` |
+| `NAME` | String, default: `items` |
+| `SCHEMA` | String, default: `Item` |
+| `PRESENCE` | String, default: `optional`, choices: `required`, `optional` |
+
+### `limit [KEYWORD] to [VALUE]`
+
+Adds a limit to the property declared just above. `minItems` and `maxItems` apply to an array property itself; the other limits apply to each of its items.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaConstraint` |
+| `KEYWORD` | String, default: `minimum`, choices: `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems` |
+| `VALUE` | Number, default: `0` |
+
+### `allowed values [VALUES]`
+
+Restricts the property declared just above to an enum. VALUES is a JSON array, or a comma-separated list of strings.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaAllowedValues` |
+| `VALUES` | String, default: `red, green, blue` |
+
+### `allow undeclared properties [ALLOW]`
+
+Sets whether the schema accepts properties it does not declare. Left out, undeclared properties are accepted, as in JSON Schema.
+
+| Property | Value |
+|---|---|
+| Type | Command |
+| Opcode | `schemaAdditionalProperties` |
+| `ALLOW` | String, default: `no`, choices: `no`, `yes` |
+
+### `schema [NAME] JSON`
+
+Reports the canonical JSON Schema a `define schema` hat lowers to, or an empty string if it is unknown or invalid.
+
+| Property | Value |
+|---|---|
+| Type | Reporter |
+| Opcode | `schemaJson` |
+| `NAME` | String, default: `Player` |
+
+### `schema [NAME] defined?`
+
+True when a valid `define schema` hat has that name. A name may be pinned as Name@1.0.0.
+
+| Property | Value |
+|---|---|
+| Type | Boolean |
+| Opcode | `isSchemaDefined` |
+| `NAME` | String, default: `Player` |
 
 ### `function argument [PATH]`
 
@@ -199,24 +297,72 @@ Reports the most recent function error, or an empty string.
 | Project stop | Running calls fail and promise references are cleared. |
 | Invalid `define function` hats (non-literal inputs, invalid schema, duplicate names) | The function is not defined; `function [NAME] defined?` reports false. |
 
-The first version keeps schema authoring as literal JSON text. The visual builder should use a
-`define schema` hat followed by declarative property blocks. For example:
+## Building a schema from blocks
+
+Schemas can be written as JSON text, as before, or built from blocks. A `define schema` hat with
+property blocks stacked under it declares a named schema:
 
 ```text
 define schema [Player] version [1.0.0]
   property [name] type [string] required
-  property [score] type [number] required minimum (0)
+  property [score] type [number] required
+  limit [minimum] to (0)
   property [tags] type [array of string] optional
 ```
 
-Nested object and array properties should reference another named schema, so the same schema can
-be selected for function arguments, return values, and named data. The block sequence must lower
-to the canonical JSON Schema object consumed by `validateAgainstSchema`; it must not create a
-second validation format or change existing JSON-text projects. This is a proposed block contract,
-not an implemented feature. The implementation boundary is the schema definition and conversion
-layer: it reads literal block fields, reports duplicate/invalid definitions, and produces the
-canonical schema. It does not execute arbitrary blocks while loading a schema. Editor block
-mutation and nested-schema UX remain separate implementation work.
+That stack lowers to exactly the JSON Schema the text form would produce:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "score": {"type": "number", "minimum": 0},
+    "tags": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["name", "score"]
+}
+```
+
+`schema [NAME] JSON` reports that canonical schema, so the lowering is visible in the project.
+
+A `define schema` stack is a declaration, not a script. It is read before anything runs, its hat
+never activates, and the blocks under it do nothing if the stack is clicked. Every field it reads
+must be literal text; a reporter plugged into one is rejected rather than evaluated.
+
+### Using a named schema in a function
+
+`args schema` and `returns schema` take either JSON text or the name of a `define schema` hat, so
+`args schema [Player]` validates calls against the schema above. A name may be pinned to a version
+as `Player@1.0.0`. Text that is not JSON is read as a name, so projects that hold JSON text keep
+working unchanged, and a name is resolved through the same `validateAgainstSchema` subset as text.
+
+### Which blocks build what
+
+| Block | Lowers to |
+|---|---|
+| `property [NAME] type [TYPE] [PRESENCE]` | A property of that type; `required` adds it to `required`. |
+| `property [NAME] schema [SCHEMA] [PRESENCE]` | A property holding the named schema, inlined. |
+| `property [NAME] array of schema [SCHEMA] [PRESENCE]` | `{"type": "array", "items": <named schema>}`. |
+| `limit [KEYWORD] to (VALUE)` | `minimum`, `maximum`, `minLength`, `maxLength`, `minItems` or `maxItems` on the property above. |
+| `allowed values [VALUES]` | `enum`, from a JSON array or a comma-separated list. |
+| `allow undeclared properties [ALLOW]` | `additionalProperties`; left out, undeclared properties are accepted. |
+
+`minItems` and `maxItems` describe an array property itself; the other limits describe each of its
+items, so `array of number` with `limit minimum to 0` requires every item to be at least 0. An
+`allowed values` list must match the property's declared type.
+
+### Schema diagnostics
+
+A schema that cannot be read is reported with the sprite and block that holds it, and is left
+undefined; `schema [NAME] defined?` then reports false and other schemas keep working. Duplicate
+property names, duplicate `name@version` pairs, a limit or an allowed-values list with no property
+above it, a block that does not belong in the stack, an unknown schema name, and a reference cycle
+are all definition errors. A name with several versions and no pinned version is ambiguous rather
+than guessed, and an unknown version fails instead of falling back to a different one.
+
+Editor block mutation and a nested-schema editing UX remain separate work; nesting is expressed
+today by referring to another named schema.
 
 ### Schema identity with named data
 
@@ -224,8 +370,10 @@ Named-data carries only a structured value's `{id, version}` schema identity; ID
 `^[a-z][a-z0-9.-]{0,127}$` and versions must be complete SemVer values. The consumer owns the
 schema catalog. Resolve the exact identity before validating the returned JSON value with
 `validateAgainstSchema`. An unknown ID or version must fail explicitly, with no fallback to a
-different version. This package continues to use inline canonical JSON Schema for function
-arguments and returns. Its supported subset is `type`, `properties`, `required`,
+different version. Within this package, `define schema` names follow the same `name@version`
+identity and the same complete-SemVer rule, and function arguments and returns use the canonical
+JSON Schema those names and the text form both produce. Its supported subset is `type`,
+`properties`, `required`,
 `additionalProperties` (boolean), `items`, `enum`, `const`, `minimum`, `maximum`, `minLength`,
 `maxLength`, `minItems`, and `maxItems`; other keywords do not add validation behavior.
 
@@ -257,10 +405,35 @@ functions.release();
 | Member | Purpose |
 |---|---|
 | `scan()` / `tools()` / `isDefined(name)` | Read and validate `define function` hats |
+| `schemas()` | `define schema` hats lowered to canonical JSON Schema, with their definition errors |
 | `call(name, args, {caller, exportedOnly})` | Validate arguments, run the function, and resolve with its return value |
 | `start(...)` / `await(ref)` / `awaitAll(refs)` / `isSettled(ref)` | Asynchronous calls through `{"$promise": id}` references |
 | `matchHat` / `argumentsFor` / `returnFrom` | Bridge from the consumer's blocks |
 | `cancelAll(reason)` / `release()` | Fail pending calls; `release` also detaches runtime listeners |
+
+The visual schema builder is opt-in. A consumer that owns schema blocks of its own passes their
+opcodes as `schemaBlockOpcodes`, and `args schema` and `returns schema` then accept a schema name
+as well as JSON text. Left out, those inputs accept JSON text only, exactly as before.
+
+```ts
+const functions = createNamedFunctions({
+  runtime: Scratch.vm.runtime,
+  functionHatOpcode: 'myextension_defineFunction',
+  schemaBlockOpcodes: {
+    hat: 'myextension_defineSchema',
+    property: 'myextension_schemaProperty',
+    propertySchema: 'myextension_schemaPropertySchema',
+    propertyArraySchema: 'myextension_schemaPropertyArraySchema',
+    constraint: 'myextension_schemaConstraint',
+    allowedValues: 'myextension_schemaAllowedValues',
+    additionalProperties: 'myextension_schemaAdditionalProperties'
+  }
+});
+```
+
+`scanSchemaDefinitions(targets, opcodes)` and `resolveSchemaReference(schemas, name, label)` are
+exported for consumers that resolve schemas themselves, and `scanFunctionDefinitions` takes a
+`resolveSchema` callback for any other schema catalog.
 
 ## Compatibility
 

@@ -64,6 +64,20 @@
       ]
     },
     {
+      "opcode": "defineSchema",
+      "blockType": "HAT",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        },
+        {
+          "id": "VERSION",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
       "opcode": "functionArgument",
       "blockType": "REPORTER",
       "arguments": [
@@ -80,6 +94,16 @@
     },
     {
       "opcode": "isDefined",
+      "blockType": "BOOLEAN",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "isSchemaDefined",
       "blockType": "BOOLEAN",
       "arguments": [
         {
@@ -114,6 +138,110 @@
       ]
     },
     {
+      "opcode": "schemaAdditionalProperties",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "ALLOW",
+          "type": "STRING",
+          "menu": "allowModes"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaAllowedValues",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "VALUES",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaConstraint",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "KEYWORD",
+          "type": "STRING",
+          "menu": "constraintKeywords"
+        },
+        {
+          "id": "VALUE",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaJson",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaProperty",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        },
+        {
+          "id": "PRESENCE",
+          "type": "STRING",
+          "menu": "presenceModes"
+        },
+        {
+          "id": "TYPE",
+          "type": "STRING",
+          "menu": "propertyTypes"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaPropertyArraySchema",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        },
+        {
+          "id": "PRESENCE",
+          "type": "STRING",
+          "menu": "presenceModes"
+        },
+        {
+          "id": "SCHEMA",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "opcode": "schemaPropertySchema",
+      "blockType": "COMMAND",
+      "arguments": [
+        {
+          "id": "NAME",
+          "type": "STRING"
+        },
+        {
+          "id": "PRESENCE",
+          "type": "STRING",
+          "menu": "presenceModes"
+        },
+        {
+          "id": "SCHEMA",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
       "opcode": "startFunction",
       "blockType": "REPORTER",
       "arguments": [
@@ -130,7 +258,23 @@
   ],
   "menus": [
     {
+      "id": "allowModes",
+      "acceptReporters": false
+    },
+    {
+      "id": "constraintKeywords",
+      "acceptReporters": false
+    },
+    {
       "id": "exportModes",
+      "acceptReporters": false
+    },
+    {
+      "id": "presenceModes",
+      "acceptReporters": false
+    },
+    {
+      "id": "propertyTypes",
       "acceptReporters": false
     }
   ]

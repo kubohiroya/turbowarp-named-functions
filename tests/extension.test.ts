@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import definitions from '../src/block-definitions.json';
-import {DEFINE_FUNCTION_OPCODE, NamedFunctionsExtension} from '../src/extension.js';
-import {FakeRuntime, targetWithFunctions} from './helpers/fake-runtime.js';
+import {DEFINE_FUNCTION_OPCODE, NamedFunctionsExtension, SCHEMA_BLOCK_OPCODES} from '../src/extension.js';
+import {FakeRuntime, targetWithFunctions, targetWithSchemas} from './helpers/fake-runtime.js';
 
 beforeEach(() => {
   vi.stubGlobal('Scratch', {
@@ -79,5 +79,105 @@ describe('NamedFunctionsExtension', () => {
     await expect(extension.callFunction({NAME: 'add', ARGS: '{"a":1}'})).resolves.toBe('');
     expect(extension.lastError()).toContain('$.b is required');
     expect(extension.isDefined({NAME: 'add'})).toBe(true);
+  });
+});
+
+describe('NamedFunctionsExtension schema blocks', () => {
+  function setupSchemas(functionSchema = 'Scored') {
+    const runtime = new FakeRuntime();
+    runtime.targets = [
+      targetWithFunctions(DEFINE_FUNCTION_OPCODE, [{name: 'scored', schema: functionSchema}]),
+      targetWithSchemas(
+        [
+          {
+            name: 'Scored',
+            body: [
+              {kind: 'property', name: 'points', type: 'number'},
+              {kind: 'limit', keyword: 'minimum', value: '0'}
+            ]
+          }
+        ],
+        'Stage',
+        SCHEMA_BLOCK_OPCODES
+      )
+    ];
+    return {runtime, extension: new NamedFunctionsExtension({runtime})};
+  }
+
+  it('never activates the define schema hat', () => {
+    const {extension} = setupSchemas();
+    expect(extension.defineSchema()).toBe(false);
+  });
+
+  it('reports the canonical JSON Schema a stack lowers to', () => {
+    const {extension} = setupSchemas();
+    expect(JSON.parse(extension.schemaJson({NAME: 'Scored'}))).toEqual({
+      type: 'object',
+      properties: {points: {type: 'number', minimum: 0}},
+      required: ['points']
+    });
+    expect(extension.lastError()).toBe('');
+  });
+
+  it('reports an unknown schema as an empty string and an error', () => {
+    const {extension} = setupSchemas();
+    expect(extension.schemaJson({NAME: 'Missing'})).toBe('');
+    expect(extension.lastError()).toContain('unknown schema "Missing"');
+  });
+
+  it('keeps valid schemas usable when another schema is broken', () => {
+    const runtime = new FakeRuntime();
+    runtime.targets = [
+      targetWithFunctions(DEFINE_FUNCTION_OPCODE, [{name: 'noop', schema: '{"type":"object","properties":{}}'}]),
+      targetWithSchemas(
+        [{name: 'Good', body: [{kind: 'property', name: 'a', type: 'string'}]}, {name: 'bad name'}],
+        'Stage',
+        SCHEMA_BLOCK_OPCODES
+      )
+    ];
+    const extension = new NamedFunctionsExtension({runtime});
+
+    expect(extension.isSchemaDefined({NAME: 'Good'})).toBe(true);
+    expect(JSON.parse(extension.schemaJson({NAME: 'Good'}))).toEqual({
+      type: 'object',
+      properties: {a: {type: 'string'}},
+      required: ['a']
+    });
+    expect(extension.lastError()).toBe('');
+
+    expect(extension.schemaJson({NAME: 'Nope'})).toBe('');
+    expect(extension.lastError()).toContain('unknown schema "Nope"');
+    expect(extension.lastError()).toContain('invalid schema definitions: Stage (block schemaHat1)');
+  });
+
+  it('answers whether a schema is defined', () => {
+    const {extension} = setupSchemas();
+    expect(extension.isSchemaDefined({NAME: 'Scored'})).toBe(true);
+    expect(extension.isSchemaDefined({NAME: 'Scored@1.0.0'})).toBe(true);
+    expect(extension.isSchemaDefined({NAME: 'Scored@9.0.0'})).toBe(false);
+    expect(extension.isSchemaDefined({NAME: 'Missing'})).toBe(false);
+  });
+
+  it('validates call arguments against a schema named by the function', async () => {
+    const {runtime, extension} = setupSchemas();
+    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":-1}'})).resolves.toBe('');
+    expect(extension.lastError()).toContain('Invalid arguments for scored: $.points must be >= 0');
+    expect(runtime.startedHats).toEqual([]);
+
+    const result = extension.callFunction({NAME: 'scored', ARGS: '{"points":7}'});
+    const thread = runtime.spawnThread();
+    expect(extension.defineFunction({NAME: 'scored'}, {thread})).toBe(true);
+    extension.returnValue({VALUE: '7'}, {thread});
+    await expect(result).resolves.toBe(7);
+  });
+
+  it('leaves the declarative body blocks as no-ops', () => {
+    const {extension} = setupSchemas();
+    expect(extension.schemaProperty()).toBeUndefined();
+    expect(extension.schemaPropertySchema()).toBeUndefined();
+    expect(extension.schemaPropertyArraySchema()).toBeUndefined();
+    expect(extension.schemaConstraint()).toBeUndefined();
+    expect(extension.schemaAllowedValues()).toBeUndefined();
+    expect(extension.schemaAdditionalProperties()).toBeUndefined();
   });
 });

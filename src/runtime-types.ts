@@ -14,6 +14,8 @@ export interface SerializedBlock {
   opcode: string;
   topLevel?: boolean;
   shadow?: boolean;
+  /** Id of the next block in the same stack, as the VM serializes a script. */
+  next?: string | null;
   inputs?: Record<string, SerializedInput>;
   fields?: Record<string, SerializedField>;
 }

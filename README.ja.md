@@ -58,7 +58,7 @@ say (call function [add] with [{"a":1,"b":2}])
 
 ### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。RETURNSには任意の戻り値JSON Schemaを指定でき、空欄なら戻り値を検証しません。
+名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。
 
 | 項目 | 値 |
 |---|---|
@@ -69,6 +69,104 @@ say (call function [add] with [{"a":1,"b":2}])
 | `SCHEMA` | 文字列, 既定値: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
 | `RETURNS` | 文字列, 既定値: `` |
 | `EXPORT` | 文字列, 既定値: `none`, 選択肢: `none`, `tool` |
+
+### `define schema [NAME] version [VERSION]`
+
+下に積まれたpropertyブロックから、名前付きJSON Schemaを宣言します。NAMEとVERSIONには文字列を直接書く必要があり、VERSIONは完全なSemVer値でなければなりません。この積み木は宣言として読まれるだけで実行されず、結果はSchema文字列と同じcanonical JSON Schemaになります。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | ハット |
+| Opcode | `defineSchema` |
+| `NAME` | 文字列, 既定値: `Player` |
+| `VERSION` | 文字列, 既定値: `1.0.0` |
+
+### `property [NAME] type [TYPE] [PRESENCE]`
+
+`define schema`の積み木の中で、Schemaのプロパティを1つ宣言します。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaProperty` |
+| `NAME` | 文字列, 既定値: `name` |
+| `TYPE` | 文字列, 既定値: `string`, 選択肢: `string`, `number`, `integer`, `boolean`, `null`, `object`, `array`, `array of string`, `array of number`, `array of integer`, `array of boolean`, `array of object` |
+| `PRESENCE` | 文字列, 既定値: `required`, 選択肢: `required`, `optional` |
+
+### `property [NAME] schema [SCHEMA] [PRESENCE]`
+
+別の名前付きSchemaに従う値を持つプロパティを宣言します。SCHEMAには`define schema`の名前を書き、Name@1.0.0の形でバージョンを固定できます。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaPropertySchema` |
+| `NAME` | 文字列, 既定値: `profile` |
+| `SCHEMA` | 文字列, 既定値: `Profile` |
+| `PRESENCE` | 文字列, 既定値: `required`, 選択肢: `required`, `optional` |
+
+### `property [NAME] array of schema [SCHEMA] [PRESENCE]`
+
+項目が別の名前付きSchemaに従う配列を持つプロパティを宣言します。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaPropertyArraySchema` |
+| `NAME` | 文字列, 既定値: `items` |
+| `SCHEMA` | 文字列, 既定値: `Item` |
+| `PRESENCE` | 文字列, 既定値: `optional`, 選択肢: `required`, `optional` |
+
+### `limit [KEYWORD] to [VALUE]`
+
+すぐ上で宣言したプロパティに制約を加えます。`minItems`と`maxItems`は配列そのものに、その他の制約は配列の各項目に適用されます。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaConstraint` |
+| `KEYWORD` | 文字列, 既定値: `minimum`, 選択肢: `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems` |
+| `VALUE` | 数値, 既定値: `0` |
+
+### `allowed values [VALUES]`
+
+すぐ上で宣言したプロパティの値をenumに制限します。VALUESにはJSON配列、またはカンマ区切りの文字列を書きます。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaAllowedValues` |
+| `VALUES` | 文字列, 既定値: `red, green, blue` |
+
+### `allow undeclared properties [ALLOW]`
+
+宣言していないプロパティをSchemaが受け入れるかどうかを設定します。省略した場合は、JSON Schemaと同じく受け入れます。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | コマンド |
+| Opcode | `schemaAdditionalProperties` |
+| `ALLOW` | 文字列, 既定値: `no`, 選択肢: `no`, `yes` |
+
+### `schema [NAME] JSON`
+
+`define schema`ハットが変換されたcanonical JSON Schemaを返します。未定義または不正な場合は空文字列を返します。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | 値ブロック |
+| Opcode | `schemaJson` |
+| `NAME` | 文字列, 既定値: `Player` |
+
+### `schema [NAME] defined?`
+
+その名前の正しい`define schema`ハットがあればtrueを返します。Name@1.0.0の形でバージョンを固定できます。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | 真偽値ブロック |
+| Opcode | `isSchemaDefined` |
+| `NAME` | 文字列, 既定値: `Player` |
 
 ### `function argument [PATH]`
 
@@ -188,20 +286,62 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 | プロジェクトの停止 | 実行中の呼び出しは失敗し、Promiseへの参照は消去される |
 | `define function`ハットが不正（文字列の直書きでない、スキーマが不正、名前の重複） | 関数は定義されない。`function [NAME] defined?`はfalseを返す |
 
-初回は既存のJSON文字列入力を維持します。視覚Schemaビルダーは、`define schema`ハットの下に宣言的なpropertyブロックを並べる形を提案します。
+## ブロックでSchemaを組み立てる
+
+Schemaは従来どおりJSON文字列で書けますし、ブロックで組み立てることもできます。`define schema`ハットの下にpropertyブロックを積むと、名前付きSchemaを宣言できます。
 
 ```text
 define schema [Player] version [1.0.0]
   property [name] type [string] required
-  property [score] type [number] required minimum (0)
+  property [score] type [number] required
+  limit [minimum] to (0)
   property [tags] type [array of string] optional
 ```
 
-ネストしたobjectやarrayのpropertyは別の名前付きSchemaを参照できるようにし、同じSchemaを関数の引数・戻り値・名前付きデータに選べるようにします。ブロック列は`validateAgainstSchema`が扱うcanonical JSON Schemaへ変換し、別の検証形式を作らず、既存のJSON文字列プロジェクトもそのまま使います。これはブロック仕様案であり、まだ実装されていません。実装境界はSchema定義と変換層です。リテラルのブロック項目を読み、重複・不正な定義を報告してcanonical schemaを生成します。Schema読み込み時に任意のブロックを実行しません。ブロックのmutation UIやネストSchemaの編集体験は別の実装作業です。
+この積み木は、文字列で書いた場合とまったく同じJSON Schemaへ変換されます。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "score": {"type": "number", "minimum": 0},
+    "tags": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["name", "score"]
+}
+```
+
+`schema [NAME] JSON`はこのcanonical schemaを返すので、変換結果をプロジェクト上で確認できます。
+
+`define schema`の積み木はスクリプトではなく宣言です。実行前に読み取られ、ハットは起動せず、積み木をクリックしても下のブロックは何もしません。読み取る項目はすべて文字列の直書きである必要があり、値ブロックを差し込んだ場合は評価せずにエラーとして報告します。
+
+### 関数で名前付きSchemaを使う
+
+`args schema`と`returns schema`には、JSON文字列のほかに`define schema`ハットの名前を書けます。`args schema [Player]`と書けば、上のSchemaで呼び出しを検証します。`Player@1.0.0`の形でバージョンを固定できます。JSONとして解釈できない文字列は名前として読むため、JSON文字列を使っている既存プロジェクトはそのまま動き、名前で指定した場合も文字列と同じ`validateAgainstSchema`のsubsetを通ります。
+
+### どのブロックが何になるか
+
+| ブロック | 変換結果 |
+|---|---|
+| `property [NAME] type [TYPE] [PRESENCE]` | その型のproperty。`required`なら`required`に追加します。 |
+| `property [NAME] schema [SCHEMA] [PRESENCE]` | 名前付きSchemaをそのまま展開したproperty。 |
+| `property [NAME] array of schema [SCHEMA] [PRESENCE]` | `{"type": "array", "items": <名前付きSchema>}`。 |
+| `limit [KEYWORD] to (VALUE)` | すぐ上のpropertyへの`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`。 |
+| `allowed values [VALUES]` | JSON配列またはカンマ区切りの一覧からの`enum`。 |
+| `allow undeclared properties [ALLOW]` | `additionalProperties`。省略した場合は宣言していないpropertyを受け入れます。 |
+
+`minItems`と`maxItems`は配列そのものを、その他の制約は配列の各項目を対象とします。したがって`array of number`に`limit minimum to 0`を付けると、各項目が0以上であることを要求します。`allowed values`の値は、propertyの宣言した型と一致している必要があります。
+
+### Schemaの診断
+
+読み取れないSchemaは、それを含むスプライトとブロックとともに報告され、未定義として扱われます。その場合`schema [NAME] defined?`はfalseを返し、他のSchemaはそのまま使えます。propertyの名前の重複、`name@version`の重複、propertyの上にない制約やallowed values、積み木に属さないブロック、未知のSchema名、参照の循環は、いずれも定義エラーです。複数バージョンがある名前をバージョン指定なしで参照した場合は、推測せずに曖昧として失敗し、未知のバージョンは別バージョンへfallbackせずに失敗します。
+
+ブロックのmutation UIやネストSchemaの編集体験は別の作業です。ネストは現在、別の名前付きSchemaを参照する形で表現します。
 
 ### named dataとのSchema identity
 
-named-dataが運ぶのはstructured valueの`{id, version}` identityだけです。IDは`^[a-z][a-z0-9.-]{0,127}$`に一致し、versionは完全なSemVerである必要があります。Schema catalogはconsumerが所有します。戻されたJSON値を検証する前にidentityと完全一致するSchemaを解決してください。IDやversionが見つからない場合は明示的に失敗し、別versionへfallbackしません。このpackageの関数引数／戻り値Schemaは引き続きinlineのcanonical JSON Schemaです。対応subsetは`type`、`properties`、`required`、Boolean形式の`additionalProperties`、`items`、`enum`、`const`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`です。その他のkeywordは検証動作を追加しません。
+named-dataが運ぶのはstructured valueの`{id, version}` identityだけです。IDは`^[a-z][a-z0-9.-]{0,127}$`に一致し、versionは完全なSemVerである必要があります。Schema catalogはconsumerが所有します。戻されたJSON値を検証する前にidentityと完全一致するSchemaを解決してください。IDやversionが見つからない場合は明示的に失敗し、別versionへfallbackしません。このpackage内でも`define schema`の名前は同じ`name@version` identityと完全SemVerの規則に従い、関数の引数と戻り値は、その名前と文字列形式のどちらからも得られるcanonical JSON Schemaを使います。対応subsetは`type`、`properties`、`required`、Boolean形式の`additionalProperties`、`items`、`enum`、`const`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`です。その他のkeywordは検証動作を追加しません。
 
 ## Composition API
 
