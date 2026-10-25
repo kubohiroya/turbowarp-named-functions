@@ -1,5 +1,7 @@
 # TurboWarp-Named-Functions
 
+<img src="assets/block-icon.svg" alt="" width="48" height="48">
+
 [English](README.md) | [日本語](README.ja.md)
 
 A TurboWarp extension for defining named functions that take JSON arguments and return JSON results. Scripts can call them by name, wait for the result, or start several calls and await them later. Functions can be marked for export as tools so that other extensions, such as AI tool calling, can use them.
