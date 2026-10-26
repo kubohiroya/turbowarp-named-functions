@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-named-functions",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Named, JSON-in/JSON-out functions for TurboWarp that can be called by name, synchronously or asynchronously, and exported as tools.",
   "author": "Hiroya Kubo <hiroya@cuc.ac.jp>",
   "license": "MPL-2.0",
@@ -57,7 +57,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@kubohiroya/turbowarp-extension-manifest": "^0.3.2",
-    "@kubohiroya/vite-plugin-turbowarp-extension": "^0.6.1",
+    "@kubohiroya/vite-plugin-turbowarp-extension": "^0.8.0",
     "@types/node": "^24.13.3",
     "eslint": "^9.39.5",
     "jiti": "^2.7.0",
@@ -75,11 +75,11 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@kubohiroya/turbowarp-extension-data-editor": "^0.3.3"
+    "@kubohiroya/turbowarp-extension-data-editor": "^0.3.4"
   },
-  "gitHead": "69d13e22ed36d0566abf964a67c3a5d746505c2e",
+  "gitHead": "37fba5b6cfb1d0a862ab4341df951d4685d0f20e",
   "x-turbowarp-source": {
-    "revision": "69d13e22ed36d0566abf964a67c3a5d746505c2e",
+    "revision": "37fba5b6cfb1d0a862ab4341df951d4685d0f20e",
     "revisionRole": "base-commit",
     "sourceState": "local-release-overlay"
   }
