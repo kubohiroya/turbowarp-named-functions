@@ -447,9 +447,10 @@ exported for consumers that resolve schemas themselves, and `scanFunctionDefinit
 
 ## Development
 
-Use Node.js 22.18.0 or newer and the pnpm version declared by `packageManager`.
+Use Node.js 24 or newer and the pnpm version declared by `packageManager`.
 
 ```bash
+npm install --global corepack@latest
 corepack enable
 pnpm install --frozen-lockfile
 pnpm check
