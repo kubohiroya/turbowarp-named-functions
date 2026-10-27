@@ -2,7 +2,7 @@
 
 <img src="assets/block-icon.svg" alt="" width="48" height="48">
 
-[English](README.md) | [日本語](README.ja.md)
+[English](README.md) | 日本語
 
 JSONの引数を受け取りJSONの結果を返す「名前を持つ関数」を定義するTurboWarp機能拡張です。スクリプトから名前で呼び出して結果を待つことも、いくつか開始しておいてあとでまとめて待つこともできます。ツールとして公開する印を付けると、AIのツール呼び出しなど、ほかの拡張から使えるようになります。
 
