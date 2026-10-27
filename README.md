@@ -8,6 +8,16 @@ A TurboWarp extension for defining named functions that take JSON arguments and 
 
 **User guide:** [English](https://kubohiroya.github.io/turbowarp-named-functions/) | [日本語](https://kubohiroya.github.io/turbowarp-named-functions/ja/)
 
+## Runnable sample
+
+[**Open the demo in TurboWarp Editor**](https://turbowarp.org/editor?project_url=https%3A%2F%2Fkubohiroya.github.io%2Fturbowarp-named-functions%2Fsamples%2Fcall-greeting-function.sb3) · [Download the SB3](https://kubohiroya.github.io/turbowarp-named-functions/samples/call-greeting-function.sb3)
+
+Select **Run without sandbox**, then **Allow**, and click the green flag.
+The named function returns Hello, TurboWarp!.
+
+Editable sources and expected results: [`samples/README.md`](samples/README.md).
+Run `pnpm run samples:build` after source/bundle changes and `pnpm run samples:check` before committing.
+
 ## What it does
 
 - Defines functions with a `define function` hat: a name, a description, and a JSON Schema for the arguments.

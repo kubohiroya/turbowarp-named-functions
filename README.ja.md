@@ -8,6 +8,15 @@ JSONの引数を受け取りJSONの結果を返す「名前を持つ関数」を
 
 **利用ガイド:** [English](https://kubohiroya.github.io/turbowarp-named-functions/) | [日本語](https://kubohiroya.github.io/turbowarp-named-functions/ja/)
 
+## 実行できるサンプル
+
+[**TurboWarp Editorでデモを開く**](https://turbowarp.org/editor?project_url=https%3A%2F%2Fkubohiroya.github.io%2Fturbowarp-named-functions%2Fsamples%2Fcall-greeting-function.sb3) · [SB3をダウンロード](https://kubohiroya.github.io/turbowarp-named-functions/samples/call-greeting-function.sb3)
+
+**Run without sandbox**を選んで**Allow**し、緑の旗を押します。
+`defineFunction`で引数を受け、`functionArgument`・`returnValue`・`callFunction`で挨拶を返す。サンプルの元データと期待結果は[`samples/README.md`](samples/README.md)に記載しています。
+
+`pnpm run samples:build`でSB3を再生成し、`pnpm run samples:check`で更新漏れと生成処理を確認します。
+
 ## できること
 
 - `define function`ハットで関数を定義する（名前、説明、引数のJSON Schema）
