@@ -40,7 +40,7 @@ A TurboWarp extension for defining named functions that take JSON arguments and 
 ### npm package
 
 ```bash
-pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.2.0
+pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.3.0
 ```
 
 Standalone bundle:
