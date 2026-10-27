@@ -1,0 +1,21 @@
+{
+  "baseURL": "https://kubohiroya.github.io/turbowarp-named-functions/",
+  "extension": {
+    "id": "kubohiroyanamedfunctions",
+    "bundle": "dist/turbowarp-named-functions.js",
+    "unsandboxed": true
+  },
+  "samples": [
+    {
+      "name": "call-greeting-function",
+      "title": "Named Functions minimal demo",
+      "checks": [
+        {
+          "variable": "greeting",
+          "equals": "Hello, TurboWarp!"
+        }
+      ],
+      "instructions": "The named function returns Hello, TurboWarp!."
+    }
+  ]
+}

@@ -1,0 +1,313 @@
+{
+  "targets": [
+    {
+      "isStage": true,
+      "name": "Stage",
+      "variables": {
+        "sample-state": [
+          "Sample state",
+          ""
+        ],
+        "greeting": [
+          "Function result",
+          ""
+        ]
+      },
+      "lists": {},
+      "broadcasts": {},
+      "blocks": {
+        "b1": {
+          "opcode": "event_whenflagclicked",
+          "parent": null,
+          "next": "b2",
+          "inputs": {},
+          "fields": {},
+          "shadow": false,
+          "topLevel": true,
+          "x": 35,
+          "y": 35
+        },
+        "b2": {
+          "opcode": "data_setvariableto",
+          "parent": "b1",
+          "next": "b3",
+          "inputs": {
+            "VALUE": [
+              1,
+              [
+                10,
+                "Running"
+              ]
+            ]
+          },
+          "fields": {
+            "VARIABLE": [
+              "Sample state",
+              "sample-state"
+            ]
+          },
+          "shadow": false,
+          "topLevel": false
+        },
+        "b3": {
+          "opcode": "data_setvariableto",
+          "parent": "b2",
+          "next": "b5",
+          "inputs": {
+            "VALUE": [
+              3,
+              "b4",
+              [
+                10,
+                ""
+              ]
+            ]
+          },
+          "fields": {
+            "VARIABLE": [
+              "Function result",
+              "greeting"
+            ]
+          },
+          "shadow": false,
+          "topLevel": false
+        },
+        "b4": {
+          "opcode": "kubohiroyanamedfunctions_callFunction",
+          "parent": "b3",
+          "next": null,
+          "inputs": {
+            "NAME": [
+              1,
+              [
+                10,
+                "sample-greet"
+              ]
+            ],
+            "ARGS": [
+              1,
+              [
+                10,
+                "{\"name\":\"TurboWarp\"}"
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "b5": {
+          "opcode": "data_setvariableto",
+          "parent": "b3",
+          "next": null,
+          "inputs": {
+            "VALUE": [
+              1,
+              [
+                10,
+                "Ready"
+              ]
+            ]
+          },
+          "fields": {
+            "VARIABLE": [
+              "Sample state",
+              "sample-state"
+            ]
+          },
+          "shadow": false,
+          "topLevel": false
+        },
+        "b6": {
+          "opcode": "kubohiroyanamedfunctions_defineFunction",
+          "parent": null,
+          "next": "b8",
+          "inputs": {
+            "NAME": [
+              1,
+              [
+                10,
+                "sample-greet"
+              ]
+            ],
+            "DESCRIPTION": [
+              1,
+              [
+                10,
+                "Return a greeting."
+              ]
+            ],
+            "SCHEMA": [
+              1,
+              [
+                10,
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}"
+              ]
+            ],
+            "RETURNS": [
+              1,
+              [
+                10,
+                "{\"type\":\"string\"}"
+              ]
+            ],
+            "EXPORT": [
+              1,
+              "b7"
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": true,
+          "x": 560,
+          "y": 35
+        },
+        "b7": {
+          "opcode": "kubohiroyanamedfunctions_menu_exportModes",
+          "parent": "b6",
+          "next": null,
+          "inputs": {},
+          "fields": {
+            "exportModes": [
+              "none",
+              null
+            ]
+          },
+          "shadow": true,
+          "topLevel": false
+        },
+        "b8": {
+          "opcode": "kubohiroyanamedfunctions_returnValue",
+          "parent": "b6",
+          "next": null,
+          "inputs": {
+            "VALUE": [
+              3,
+              "b9",
+              [
+                10,
+                ""
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "b9": {
+          "opcode": "operator_join",
+          "parent": "b8",
+          "next": null,
+          "inputs": {
+            "STRING1": [
+              1,
+              [
+                10,
+                "Hello, "
+              ]
+            ],
+            "STRING2": [
+              3,
+              "b10",
+              [
+                10,
+                ""
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "b10": {
+          "opcode": "operator_join",
+          "parent": "b9",
+          "next": null,
+          "inputs": {
+            "STRING1": [
+              3,
+              "b11",
+              [
+                10,
+                ""
+              ]
+            ],
+            "STRING2": [
+              1,
+              [
+                10,
+                "!"
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "b11": {
+          "opcode": "kubohiroyanamedfunctions_functionArgument",
+          "parent": "b10",
+          "next": null,
+          "inputs": {
+            "PATH": [
+              1,
+              [
+                10,
+                "name"
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        }
+      },
+      "comments": {},
+      "currentCostume": 0,
+      "costumes": [
+        {
+          "assetId": "",
+          "name": "Instructions",
+          "bitmapResolution": 1,
+          "md5ext": "backdrop.svg",
+          "dataFormat": "svg",
+          "rotationCenterX": 240,
+          "rotationCenterY": 180
+        }
+      ],
+      "sounds": [],
+      "volume": 100,
+      "layerOrder": 0,
+      "tempo": 60,
+      "videoTransparency": 50,
+      "videoState": "off",
+      "textToSpeechLanguage": null
+    }
+  ],
+  "monitors": [
+    {
+      "id": "greeting",
+      "mode": "default",
+      "opcode": "data_variable",
+      "params": {
+        "VARIABLE": "Function result"
+      },
+      "spriteName": null,
+      "value": "",
+      "width": 0,
+      "height": 0,
+      "x": 18,
+      "y": 115,
+      "visible": true,
+      "sliderMin": 0,
+      "sliderMax": 100,
+      "isDiscrete": true
+    }
+  ],
+  "extensions": [],
+  "meta": {
+    "semver": "3.0.0",
+    "vm": "0.2.0",
+    "agent": "TurboWarp Plus minimal samples"
+  }
+}
