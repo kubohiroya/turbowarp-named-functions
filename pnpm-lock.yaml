@@ -7,14 +7,13 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@kubohiroya/turbowarp-extension-data-editor':
-        specifier: ^0.5.0
-        version: 0.5.0(react@18.3.1)
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.5
         version: 9.39.5
+      '@kubohiroya/turbowarp-extension-data-editor':
+        specifier: ^0.5.0
+        version: 0.5.0(react@18.3.1)
       '@kubohiroya/turbowarp-extension-manifest':
         specifier: ^0.5.0
         version: 0.5.0
