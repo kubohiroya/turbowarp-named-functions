@@ -50,7 +50,7 @@ Run `pnpm run samples:build` after source/bundle changes and `pnpm run samples:c
 ### npm package
 
 ```bash
-pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.4.1-rc.0
+pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.4.1-rc.1
 ```
 
 Standalone bundle:

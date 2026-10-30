@@ -46,7 +46,7 @@ JSONの引数を受け取りJSONの結果を返す「名前を持つ関数」を
 npm packageとして使う場合は、検証済みのversionをexact pinします。
 
 ```bash
-pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.4.1-rc.0
+pnpm add --save-exact @kubohiroya/turbowarp-named-functions@0.4.1-rc.1
 ```
 
 ## クイックスタート
