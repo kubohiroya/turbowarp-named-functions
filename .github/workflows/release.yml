@@ -54,7 +54,9 @@ jobs:
       - name: Create ZIP archive
         run: |
           cd dist
-          zip ../turbowarp-extension.zip *.js
+          # Normalize ZIP metadata so retries retain the same release attachment.
+          TZ=UTC touch -t 198001010000.00 -- *.js
+          TZ=UTC zip -X ../turbowarp-extension.zip *.js
       - name: Attach to the GitHub Release
         # An attachment that already exists must be byte-identical: a release driver may have
         # uploaded its locally verified archive first, and a differing CI build stops here,
