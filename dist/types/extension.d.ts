@@ -62,6 +62,7 @@ export declare class NamedFunctionsExtension implements TurboWarpExtension {
     isSettled(args: Args): boolean;
     isDefined(args: Args, util?: Util): boolean;
     lastError(): string;
+    /** Registers every data editor; the returned function removes them all. */
     private registerEditors;
     private callByName;
     private guard;
