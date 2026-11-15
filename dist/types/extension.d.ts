@@ -17,7 +17,14 @@ export declare class NamedFunctionsExtension implements TurboWarpExtension {
     private readonly scopeChecked;
     /** Old hats can arrive with a project, an uploaded sprite, or this extension being added. */
     private readonly upgradeScopes;
-    private readonly unregisterFixedInputEditors;
+    private unregisterFixedInputEditors;
+    /**
+     * Loading a project disposes the runtime, which releases the editor registration, but the
+     * extension stays loaded for the next project. Register again once that project has loaded.
+     */
+    private fixedInputEditorsReleased;
+    private readonly releaseFixedInputEditors;
+    private readonly restoreFixedInputEditors;
     constructor(deps: NamedFunctionsExtensionDependencies);
     dispose(): void;
     getInfo(): Record<string, unknown>;
@@ -55,6 +62,7 @@ export declare class NamedFunctionsExtension implements TurboWarpExtension {
     isSettled(args: Args): boolean;
     isDefined(args: Args, util?: Util): boolean;
     lastError(): string;
+    private registerEditors;
     private callByName;
     private guard;
     private toScratchBlock;

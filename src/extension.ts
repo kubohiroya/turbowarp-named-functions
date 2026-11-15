@@ -69,19 +69,24 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
   private readonly upgradeScopes = () => {
     upgradeLegacyScopes(this.runtime.targets, DEFINE_FUNCTION_OPCODE, this.scopeChecked);
   };
-  private readonly unregisterFixedInputEditors: () => void;
+  private unregisterFixedInputEditors: () => void;
+  /**
+   * Loading a project disposes the runtime, which releases the editor registration, but the
+   * extension stays loaded for the next project. Register again once that project has loaded.
+   */
+  private fixedInputEditorsReleased = false;
+  private readonly releaseFixedInputEditors = () => {
+    this.fixedInputEditorsReleased = true;
+  };
+  private readonly restoreFixedInputEditors = () => {
+    if (!this.fixedInputEditorsReleased) return;
+    this.fixedInputEditorsReleased = false;
+    this.unregisterFixedInputEditors = this.registerEditors();
+  };
 
   public constructor(deps: NamedFunctionsExtensionDependencies) {
     this.runtime = deps.runtime;
-    this.unregisterFixedInputEditors = registerFixedInputEditors(
-      typeof Scratch === 'undefined' ? {} : Scratch,
-      createFixedInputEditorDefinitions((where, name, scope) => {
-        const target = this.runtime.getTargetById?.(where.targetId);
-        return target !== undefined &&
-          hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
-      }),
-      deps.runtime
-    );
+    this.unregisterFixedInputEditors = this.registerEditors();
     try {
       this.functions = createNamedFunctions({
         ...deps,
@@ -95,11 +100,16 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
     this.upgradeScopes();
     this.runtime.on('PROJECT_LOADED', this.upgradeScopes);
     this.runtime.on('PROJECT_CHANGED', this.upgradeScopes);
+    this.runtime.on('RUNTIME_DISPOSED', this.releaseFixedInputEditors);
+    this.runtime.on('PROJECT_LOADED', this.restoreFixedInputEditors);
   }
 
   public dispose(): void {
     this.runtime.off?.('PROJECT_LOADED', this.upgradeScopes);
     this.runtime.off?.('PROJECT_CHANGED', this.upgradeScopes);
+    this.runtime.off?.('RUNTIME_DISPOSED', this.releaseFixedInputEditors);
+    this.runtime.off?.('PROJECT_LOADED', this.restoreFixedInputEditors);
+    this.fixedInputEditorsReleased = false;
     this.unregisterFixedInputEditors();
   }
 
@@ -270,6 +280,18 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
   }
 
   // ---- internals ----------------------------------------------------------------------------
+
+  private registerEditors(): () => void {
+    return registerFixedInputEditors(
+      typeof Scratch === 'undefined' ? {} : Scratch,
+      createFixedInputEditorDefinitions((where, name, scope) => {
+        const target = this.runtime.getTargetById?.(where.targetId);
+        return target !== undefined &&
+          hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
+      }),
+      this.runtime
+    );
+  }
 
   private callByName(
     nameArg: unknown,

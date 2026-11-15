@@ -221,6 +221,21 @@ it('rejects duplicate registrations without removing the first owner registratio
   dispose();expect(registry.resolveFixed(options.opcodes[0]!)).toBeUndefined();
 });
 
+it('registers the editor again for each project the extension stays loaded for', () => {
+  // Every project load disposes the runtime, which releases the registration, but keeps the
+  // extension loaded.
+  const runtime = new FakeRuntime();const removes: Array<ReturnType<typeof vi.fn>> = [];
+  const register = vi.fn(() => {const remove = vi.fn();removes.push(remove);return remove;});
+  vi.stubGlobal('Scratch', {gui: {blockEditors: {apiVersion: 1, registerFixedInputEditor: register}}});
+  const extension = new NamedFunctionsExtension({runtime});
+  runtime.emit('RUNTIME_DISPOSED');runtime.emit('PROJECT_LOADED');
+  expect(register).toHaveBeenCalledTimes(2);expect(removes[0]).toHaveBeenCalledTimes(1);expect(removes[1]).not.toHaveBeenCalled();
+  runtime.emit('PROJECT_LOADED');
+  expect(register).toHaveBeenCalledTimes(2);
+  extension.dispose();runtime.emit('PROJECT_LOADED');
+  expect(removes[1]).toHaveBeenCalledTimes(1);expect(register).toHaveBeenCalledTimes(2);
+});
+
 it('does not construct function execution state if fixed registration fails', () => {
   const runtime = new FakeRuntime();const on = vi.spyOn(runtime, 'on');
   vi.stubGlobal('Scratch', {gui: {blockEditors: {apiVersion: 1, registerFixedInputEditor() {throw new Error('fixed registration failure');}}}});
