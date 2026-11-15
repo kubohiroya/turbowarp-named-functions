@@ -1,4 +1,5 @@
-import {fixedInputEditorDefinitions, registerFixedInputEditors} from './fixed-input-editors.js';
+import {createFixedInputEditorDefinitions, registerFixedInputEditors} from './fixed-input-editors.js';
+import {hasNameConflict} from './function-registry.js';
 import {extensionConfig} from './config';
 import definitions from './block-definitions.json';
 import {
@@ -9,9 +10,10 @@ import {
   toScratchValue,
   type NamedFunctions,
   type NamedFunctionsOptions,
-  type SchemaBlockOpcodes
+  type SchemaBlockOpcodes,
+  upgradeLegacyScopes
 } from './composition.js';
-import type {BlockUtilityLike} from './runtime-types.js';
+import type {BlockUtilityLike, RuntimeLike, RuntimeTarget} from './runtime-types.js';
 
 type BlockTypeName = 'COMMAND' | 'REPORTER' | 'BOOLEAN' | 'HAT';
 type ArgumentTypeName = 'STRING' | 'NUMBER' | 'BOOLEAN';
@@ -31,7 +33,8 @@ interface BlockDefinition {
 
 interface MenuDefinition {
   acceptReporters: boolean;
-  items: string[];
+  /** Fixed choices, or the name of the method that lists them when the menu opens. */
+  items: Array<string | {text: string; value: string}> | string;
 }
 
 const blockDefinitions = definitions.blocks as readonly BlockDefinition[];
@@ -60,11 +63,24 @@ type Util = BlockUtilityLike & {stopThisScript?: () => void};
 export class NamedFunctionsExtension implements TurboWarpExtension {
   private lastErrorMessage = '';
   private readonly functions: NamedFunctions;
+  private readonly runtime: RuntimeLike;
+  private readonly scopeChecked = new WeakSet<RuntimeTarget>();
+  /** Old hats can arrive with a project, an uploaded sprite, or this extension being added. */
+  private readonly upgradeScopes = () => {
+    upgradeLegacyScopes(this.runtime.targets, DEFINE_FUNCTION_OPCODE, this.scopeChecked);
+  };
   private readonly unregisterFixedInputEditors: () => void;
 
   public constructor(deps: NamedFunctionsExtensionDependencies) {
+    this.runtime = deps.runtime;
     this.unregisterFixedInputEditors = registerFixedInputEditors(
-      typeof Scratch === 'undefined' ? {} : Scratch, fixedInputEditorDefinitions, deps.runtime
+      typeof Scratch === 'undefined' ? {} : Scratch,
+      createFixedInputEditorDefinitions((where, name, scope) => {
+        const target = this.runtime.getTargetById?.(where.targetId);
+        return target !== undefined &&
+          hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
+      }),
+      deps.runtime
     );
     try {
       this.functions = createNamedFunctions({
@@ -76,9 +92,14 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
       this.unregisterFixedInputEditors();
       throw error;
     }
+    this.upgradeScopes();
+    this.runtime.on('PROJECT_LOADED', this.upgradeScopes);
+    this.runtime.on('PROJECT_CHANGED', this.upgradeScopes);
   }
 
   public dispose(): void {
+    this.runtime.off?.('PROJECT_LOADED', this.upgradeScopes);
+    this.runtime.off?.('PROJECT_CHANGED', this.upgradeScopes);
     this.unregisterFixedInputEditors();
   }
 
@@ -92,7 +113,15 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
       menus: Object.fromEntries(
         Object.entries(menuDefinitions).map(([id, menu]) => [
           id,
-          {acceptReporters: menu.acceptReporters, items: [...menu.items]}
+          {
+            acceptReporters: menu.acceptReporters,
+            items:
+              typeof menu.items === 'string'
+                ? menu.items
+                : menu.items.map((item) =>
+                    typeof item === 'string' ? item : {text: Scratch.translate(item.text), value: item.value}
+                  )
+          }
         ])
       )
     };
@@ -172,26 +201,27 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
    * calling script continues in the same step. Otherwise returns a promise and the script waits.
    */
   public callFunction(args: Args, util?: Util): string | number | boolean | Promise<string | number | boolean> {
-    const succeed = (result: unknown) => {
-      this.lastErrorMessage = '';
-      return toScratchValue(result);
-    };
-    const fail = (error: unknown) => {
-      this.lastErrorMessage = messageOf(error);
-      return '';
-    };
+    return this.callByName(args.NAME, args.ARGS, util);
+  }
+
+  public callFunctionFromMenu(
+    args: Args,
+    util?: Util
+  ): string | number | boolean | Promise<string | number | boolean> {
+    return this.callByName(args.FUNCTION, args.ARGS, util);
+  }
+
+  /** Lists the functions the edited sprite can call, for `call [FUNCTION] with [ARGS]`. */
+  public functionMenu(targetId?: string | null): Array<{text: string; value: string}> {
+    const target = targetId ? this.runtime.getTargetById?.(targetId) : undefined;
+    let names: string[] = [];
     try {
-      const outcome = this.functions.callNow(
-        Scratch.Cast.toString(args.NAME),
-        parseArguments(Scratch.Cast.toString(args.ARGS)),
-        util?.thread ? {caller: util.thread} : {}
-      );
-      if (outcome.state === 'fulfilled') return succeed(outcome.value);
-      if (outcome.state === 'rejected') return fail(outcome.error);
-      return outcome.promise.then(succeed, fail);
-    } catch (error) {
-      return fail(error);
+      names = this.functions.visible(target).map((definition) => definition.name);
+    } catch {
+      // A broken definition must not break the block palette.
     }
+    if (names.length === 0) return [{text: Scratch.translate('(no functions)'), value: ''}];
+    return names.map((name) => ({text: name, value: name}));
   }
 
   public startFunction(args: Args, util?: Util): string {
@@ -231,8 +261,8 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
     return this.functions.isSettled(parseJsonOrText(Scratch.Cast.toString(args.PROMISE)));
   }
 
-  public isDefined(args: Args): boolean {
-    return this.functions.isDefined(Scratch.Cast.toString(args.NAME));
+  public isDefined(args: Args, util?: Util): boolean {
+    return this.functions.isDefined(Scratch.Cast.toString(args.NAME), util?.thread?.target);
   }
 
   public lastError(): string {
@@ -240,6 +270,33 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
   }
 
   // ---- internals ----------------------------------------------------------------------------
+
+  private callByName(
+    nameArg: unknown,
+    argsArg: unknown,
+    util?: Util
+  ): string | number | boolean | Promise<string | number | boolean> {
+    const succeed = (result: unknown) => {
+      this.lastErrorMessage = '';
+      return toScratchValue(result);
+    };
+    const fail = (error: unknown) => {
+      this.lastErrorMessage = messageOf(error);
+      return '';
+    };
+    try {
+      const outcome = this.functions.callNow(
+        Scratch.Cast.toString(nameArg),
+        parseArguments(Scratch.Cast.toString(argsArg)),
+        util?.thread ? {caller: util.thread} : {}
+      );
+      if (outcome.state === 'fulfilled') return succeed(outcome.value);
+      if (outcome.state === 'rejected') return fail(outcome.error);
+      return outcome.promise.then(succeed, fail);
+    } catch (error) {
+      return fail(error);
+    }
+  }
 
   private guard<T>(fallback: T, action: () => T): T {
     try {

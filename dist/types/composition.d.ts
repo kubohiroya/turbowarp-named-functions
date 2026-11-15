@@ -6,11 +6,11 @@
  * TurboWarp extension and does not touch the `Scratch` global.
  */
 import { type CallOutcome } from './function-dispatcher.js';
-import { type FunctionScan, type FunctionTool } from './function-registry.js';
+import { type FunctionDefinition, type FunctionScan, type FunctionTool } from './function-registry.js';
 import { type SchemaBlockOpcodes, type SchemaScan } from './schema-builder.js';
-import type { RuntimeLike, RuntimeThread } from './runtime-types.js';
-export type { FunctionDefinition, FunctionScan, FunctionScanOptions, FunctionTool } from './function-registry.js';
-export { FUNCTION_NAME_PATTERN, scanFunctionDefinitions, toFunctionTools } from './function-registry.js';
+import type { RuntimeLike, RuntimeTarget, RuntimeThread } from './runtime-types.js';
+export type { FunctionDefinition, FunctionScan, FunctionScanOptions, FunctionScope, FunctionTool, ResolvedFunction } from './function-registry.js';
+export { FUNCTION_NAME_PATTERN, resolveFunction, sameSprite, scanFunctionDefinitions, toFunctionTools, upgradeLegacyScopes, visibleFunctions } from './function-registry.js';
 export type { SchemaBlockOpcodes, SchemaDefinition, SchemaReference, SchemaScan } from './schema-builder.js';
 export { MAX_SCHEMA_REFERENCE_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, parseSchemaReference, resolveSchemaReference, scanSchemaDefinitions } from './schema-builder.js';
 export type { RuntimeLike, RuntimeThread, BlockUtilityLike, ThreadExecutionPort } from './runtime-types.js';
@@ -22,7 +22,11 @@ export interface PromiseRef {
     $promise: string;
 }
 export interface CallOptions {
-    /** Thread of the calling block. It links nested calls and detects reentrant ones. */
+    /**
+     * Thread of the calling block. Its sprite decides which functions are visible: its own sprite
+     * functions and every global one. Without it, only global functions are visible. It also links
+     * nested calls and detects reentrant ones.
+     */
     caller?: RuntimeThread;
     /** Refuse functions that are not exported as tools (for calls chosen by a model). */
     exportedOnly?: boolean;
@@ -50,7 +54,10 @@ export interface NamedFunctions {
     schemas(): SchemaScan;
     /** Functions exported as tools, in OpenAI function-calling shape. Throws if any definition is invalid. */
     tools(): FunctionTool[];
-    isDefined(name: string): boolean;
+    /** Whether a script running as `caller` can call `name`. Without a caller, global functions only. */
+    isDefined(name: string, caller?: RuntimeTarget): boolean;
+    /** Functions a script running as `caller` can call, sprite functions first. */
+    visible(caller?: RuntimeTarget): FunctionDefinition[];
     /** Calls a function and waits for its result. Arguments are always validated against its schema. */
     call(name: string, args: unknown, options?: CallOptions): Promise<unknown>;
     /**

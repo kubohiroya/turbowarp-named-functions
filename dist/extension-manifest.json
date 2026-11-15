@@ -37,6 +37,21 @@
       ]
     },
     {
+      "opcode": "callFunctionFromMenu",
+      "blockType": "REPORTER",
+      "arguments": [
+        {
+          "id": "ARGS",
+          "type": "STRING"
+        },
+        {
+          "id": "FUNCTION",
+          "type": "STRING",
+          "menu": "functionNames"
+        }
+      ]
+    },
+    {
       "opcode": "defineFunction",
       "blockType": "HAT",
       "arguments": [
@@ -60,6 +75,11 @@
         {
           "id": "SCHEMA",
           "type": "STRING"
+        },
+        {
+          "id": "SCOPE",
+          "type": "STRING",
+          "menu": "functionScopes"
         }
       ]
     },
@@ -267,6 +287,14 @@
     },
     {
       "id": "exportModes",
+      "acceptReporters": false
+    },
+    {
+      "id": "functionNames",
+      "acceptReporters": false
+    },
+    {
+      "id": "functionScopes",
       "acceptReporters": false
     },
     {

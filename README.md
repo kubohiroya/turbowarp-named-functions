@@ -20,7 +20,8 @@ Run `pnpm run samples:build` after source/bundle changes and `pnpm run samples:c
 
 ## What it does
 
-- Defines functions with a `define function` hat: a name, a description, and a JSON Schema for the arguments.
+- Defines functions with a `define function` hat: a name, a scope (this sprite only, or all sprites), a description, and a JSON Schema for the arguments.
+- Calls a function by typing its name, or by choosing it from the functions the sprite can call.
 - Calls a function by name and waits for its result (`call function`), or starts it and awaits it later (`start function`, `await`, `await all`).
 - Checks arguments against the schema before the function runs, without generating code.
 - Optionally checks returned values against the same JSON Schema subset.
@@ -77,15 +78,16 @@ generated section manually.
 
 <!-- BEGIN GENERATED BLOCKS -->
 
-### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
+### `define function [NAME] for [SCOPE] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.
+Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCOPE `this sprite only` (the default for new hats) makes the function callable only from scripts of this sprite or the stage that defines it, and its clones; `all sprites` makes it callable from everywhere, including tools. Hats saved before SCOPE existed are for all sprites. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.
 
 | Property | Value |
 |---|---|
 | Type | Hat |
 | Opcode | `defineFunction` |
 | `NAME` | String, default: `add` |
+| `SCOPE` | String, default: `sprite`, choices: `global` (all sprites), `sprite` (this sprite only) |
 | `DESCRIPTION` | String, default: `Adds two numbers.` |
 | `SCHEMA` | String, default: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
 | `RETURNS` | String, default: `` |
@@ -220,7 +222,7 @@ Inside a function, returns a value and ends the script. JSON text is returned as
 
 ### `call function [NAME] with [ARGS]`
 
-Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.
+Calls a function by name and waits for its result. The name is looked up among this sprite's own functions, then the functions for all sprites. ARGS is JSON text and is checked against the args schema. On the TurboWarp Plus runtime a function that does not wait finishes within the call; on stock TurboWarp a call takes at least one frame.
 
 | Property | Value |
 |---|---|
@@ -228,6 +230,17 @@ Calls a function and waits for its result. ARGS is JSON text and is checked agai
 | Opcode | `callFunction` |
 | `NAME` | String, default: `add` |
 | `ARGS` | String, default: `{"a":1,"b":2}` |
+
+### `call [FUNCTION] with [ARGS]`
+
+Calls a function chosen from the functions this sprite can call: its own functions and the functions for all sprites. Otherwise the same as `call function`.
+
+| Property | Value |
+|---|---|
+| Type | Reporter |
+| Opcode | `callFunctionFromMenu` |
+| `FUNCTION` | String, default: ``, choices: the functions this sprite can call |
+| `ARGS` | String, default: `{}` |
 
 ### `start function [NAME] with [ARGS]`
 
@@ -272,7 +285,7 @@ Reports whether a started function has finished, without waiting.
 
 ### `function [NAME] defined?`
 
-Reports whether a valid define function hat with this name exists.
+Reports whether this sprite can call a function with this name: one of its own functions or a function for all sprites.
 
 | Property | Value |
 |---|---|
@@ -295,6 +308,10 @@ Reports the most recent function error, or an empty string.
 
 | Situation | Behavior |
 |---|---|
+| Scope | A new `define function` hat is for this sprite only: scripts of that sprite (or the stage), and its clones, can call it. Choose all sprites to call it from anywhere, including tools. Hats saved before scopes existed are for all sprites. |
+| Function names | A name for all sprites is unique in the project. A name for one sprite is unique in that sprite and must differ from every name for all sprites. Different sprites may each have a function of the same name. |
+| Which sprite runs the function | A sprite's own function runs as the caller (a clone runs it as itself). A function for all sprites runs as the sprite or stage that defines it. |
+| A sprite calls another sprite's function | The call fails with `Function f belongs to Cat; make it for all sprites to call it from here.` |
 | A call starts (TurboWarp Plus runtime) | The function's script starts directly and runs inside the calling block. |
 | A call starts (stock TurboWarp) | Every `define function` hat is started; only the one whose NAME matches continues. |
 | Timing (TurboWarp Plus runtime) | A function that does not wait finishes within the call, like a custom block that runs without screen refresh. A function that waits, or a call nested deeper than 128 levels, settles on a later frame. |

@@ -18,7 +18,8 @@ interface BlockDefinition {
 
 interface MenuDefinition {
   acceptReporters: boolean;
-  items: string[];
+  /** Fixed choices, or the name of the extension method that lists them when the menu opens. */
+  items: Array<string | {text: string; value: string}> | string;
 }
 
 interface BlockDefinitions {
@@ -38,6 +39,7 @@ interface Locale {
   argumentTypes: Record<string, string>;
   defaultLabel: string;
   choicesLabel: string;
+  dynamicChoices: string;
 }
 
 const START = '<!-- BEGIN GENERATED BLOCKS -->';
@@ -55,7 +57,8 @@ const LOCALES: Locale[] = [
     blockTypes: {COMMAND: 'Command', REPORTER: 'Reporter', BOOLEAN: 'Boolean', HAT: 'Hat'},
     argumentTypes: {STRING: 'String', NUMBER: 'Number', BOOLEAN: 'Boolean'},
     defaultLabel: 'default',
-    choicesLabel: 'choices'
+    choicesLabel: 'choices',
+    dynamicChoices: 'the functions this sprite can call'
   },
   {
     file: 'README.ja.md',
@@ -67,7 +70,8 @@ const LOCALES: Locale[] = [
     blockTypes: {COMMAND: 'コマンド', REPORTER: '値ブロック', BOOLEAN: '真偽値ブロック', HAT: 'ハット'},
     argumentTypes: {STRING: '文字列', NUMBER: '数値', BOOLEAN: '真偽値'},
     defaultLabel: '既定値',
-    choicesLabel: '選択肢'
+    choicesLabel: '選択肢',
+    dynamicChoices: 'このスプライトが呼べる関数'
   }
 ];
 
@@ -104,6 +108,13 @@ if (errors.length > 0) {
   throw new Error(errors.join('\n'));
 }
 
+function formatChoices(menu: MenuDefinition, locale: Locale): string {
+  if (typeof menu.items === 'string') return locale.dynamicChoices;
+  return menu.items
+    .map((item) => (typeof item === 'string' ? `\`${item}\`` : `\`${item.value}\` (${item.text})`))
+    .join(', ');
+}
+
 function renderBlock(block: BlockDefinition, locale: Locale): string {
   const rows = [
     [locale.type, locale.blockTypes[block.blockType] ?? block.blockType],
@@ -115,7 +126,7 @@ function renderBlock(block: BlockDefinition, locale: Locale): string {
       `${locale.defaultLabel}: \`${formatDefault(argument.defaultValue)}\``
     ];
     const menu = argument.menu ? definitions.menus?.[argument.menu] : undefined;
-    if (menu) parts.push(`${locale.choicesLabel}: ${menu.items.map((item) => `\`${item}\``).join(', ')}`);
+    if (menu) parts.push(`${locale.choicesLabel}: ${formatChoices(menu, locale)}`);
     rows.push([`\`${name}\``, parts.join(', ')]);
   }
   return [

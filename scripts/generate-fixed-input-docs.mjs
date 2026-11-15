@@ -4,14 +4,13 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 
 // Owner documentation source; regenerating the README cannot erase this block help.
 const opcode = "defineFunction";
-const argument = "EXPORT";
 const pages = ["site/index.html"];
-const help = "In the fixed-input editor, EXPORT is chosen from none or tool. The editor changes only this stored value; it does not run the function or the hat, and it leaves NAME, DESCRIPTION, SCHEMA, and RETURNS unchanged.";
+const help = "In the fixed-input editor, NAME is typed, SCOPE is chosen from all sprites or this sprite only, and EXPORT from none or tool. Pressing Save checks NAME against the other define function hats in the chosen scope and refuses a name already in use, including when only SCOPE changed. The editor changes only these stored values; it does not run the function or the hat, and it leaves DESCRIPTION, SCHEMA, and RETURNS unchanged.";
 const root = new URL('../', import.meta.url);
 const check = process.argv.includes('--check');
 const start = '<!-- BEGIN FIXED INPUT HELP -->';
 const end = '<!-- END FIXED INPUT HELP -->';
-const body = `${start}<p id="fixed-input-${opcode}-${argument}" class="fixed-input-editor">${help} The GUI Dialogs and FixedInputs startup flags are OFF by default; enable both and reload to use the form. Unchanged raw values are not rewritten, and connected reporters are not evaluated.</p>${end}`;
+const body = `${start}<p id="fixed-input-${opcode}" class="fixed-input-editor">${help} The GUI Dialogs and FixedInputs startup flags are OFF by default; enable both and reload to use the form. Unchanged raw values are not rewritten, and connected reporters are not evaluated.</p>${end}`;
 for (const page of pages) {
   const target = new URL(page, root);
   const current = await readFile(target, 'utf8');

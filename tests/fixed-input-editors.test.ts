@@ -6,28 +6,40 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {createFixedInputEditor, EditorRegistry} from '@kubohiroya/turbowarp-extension-data-editor';
 import type {BlockEditorHost, FixedBlockSnapshot, FixedInputDraft, JsonObject, JsonValue, LiteralArgumentChange} from '@kubohiroya/turbowarp-extension-data-editor';
 import {compileSchemaBundle} from '@kubohiroya/turbowarp-extension-data-editor/schema';
-import {fixedInputEditorDefinitions, registerFixedInputEditors} from '../src/fixed-input-editors.js';
+import {createFixedInputEditorDefinitions, registerFixedInputEditors} from '../src/fixed-input-editors.js';
 import {fixedInputSchemaBundle} from '../src/fixed-input-schema.js';
+import type {FunctionScope} from '../src/function-registry.js';
 
+/** Names other hats already use, as the conflict check sees them. */
+let taken: Array<{name: string; scope: FunctionScope}> = [];
+const conflicts = vi.fn((_where: {targetId: string; blockId: string}, name: string, scope: FunctionScope) =>
+  taken.some((other) => other.name === name && (scope === 'global' || other.scope === 'global' || other.scope === scope)));
+const fixedInputEditorDefinitions = createFixedInputEditorDefinitions(conflicts);
 const options = fixedInputEditorDefinitions[0]!;
 const argument = 'EXPORT';
 const opening = 'none';
-const retainedArguments: Record<string, string> = {"NAME": " untouched ", "DESCRIPTION": " keep description ", "SCHEMA": "{ intentionally-not-parsed", "RETURNS": "[ untouched"};
+const retainedArguments: Record<string, string> = {"DESCRIPTION": " keep description ", "SCHEMA": "{ intentionally-not-parsed", "RETURNS": "[ untouched"};
 const replacement = 'tool';
 const definition = () => createFixedInputEditor(options);
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  taken = [];
+});
 
-function fixture(raw = opening, reporter = false) {
+function fixture(raw = opening, reporter = false, name = 'sample', scope = 'sprite') {
   const registry = new EditorRegistry();
   const remove = registerFixedInputEditors({gui: {blockEditors: {apiVersion: 1,
     registerFixedInputEditor: (value: typeof options) => registry.registerFixed(createFixedInputEditor(value))}}}, fixedInputEditorDefinitions);
   const snapshot: FixedBlockSnapshot = {
     targetId: 'sprite', blockId: 'owner-block', opcode: options.opcodes[0]!, revision: '1',
     arguments: {[argument]: reporter ? {kind: 'reporter'} : {kind: 'literal', value: raw},
+      NAME: {kind: 'literal', value: name}, SCOPE: {kind: 'literal', value: scope},
       UNBOUND: {kind: 'literal', value: '  untouched source  '},
       ...Object.fromEntries(Object.entries(retainedArguments).map(([name, value]) => [name, {kind: 'literal' as const, value}]))},
     fixedContext: {contractId: options.contractId, contractRevision: options.contractRevision,
-      generation: 'generation-1', dependencies: [], readOnlyArguments: [], inputs: {
+      generation: 'generation-1', dependencies: [{selector: 'SCOPE', dependents: ['NAME']}], readOnlyArguments: [], inputs: {
+        NAME: {role: 'editable', source: 'shadow', identity: 'name-1', field: {blockId: 'name-shadow', name: 'TEXT', type: 'text'}},
+        SCOPE: {role: 'editable', source: 'field', identity: 'scope-1', field: {blockId: 'owner-block', name: 'SCOPE', type: 'field_dropdown'}},
         [argument]: reporter ? {role: 'editable', source: 'reporter', identity: 'reporter-1'}
           : {role: 'editable', source: 'field', identity: 'literal-1',
             field: {blockId: 'literal-block', name: 'EXPORT', type: 'field_dropdown'}}
@@ -37,9 +49,9 @@ function fixture(raw = opening, reporter = false) {
   const host: BlockEditorHost = {readBlock: () => snapshot, commit: () => {throw new Error('Legacy port was used.');},
     fixedInputs: {capability: 'fixed-inputs-v1', readBlock: () => snapshot, commit: request => {commits.push(request.changes);}}};
   const session = registry.open({targetId: 'sprite', blockId: 'owner-block'}, host)!;
-  function edit(value: JsonValue, buffer?: string) {
+  function edit(value: JsonValue, buffer?: string, input = argument) {
     const draft = session.getDraft();
-    (draft.inputs as JsonObject)[argument] = {value, changed: true, ...(buffer === undefined ? {} : {buffer})};
+    (draft.inputs as JsonObject)[input] = {value, changed: true, ...(buffer === undefined ? {} : {buffer})};
     session.setDraft(draft);
   }
   return {session, snapshot, commits, remove, edit};
@@ -47,12 +59,15 @@ function fixture(raw = opening, reporter = false) {
 
 describe('fixed input owner contract', () => {
   it('compiles the on-disk canonical field and registers exactly the planned argument', () => {
-    expect(compileSchemaBundle(fixedInputSchemaBundle).kind).toBe('compiled');
-    expect(definition().editableArguments).toEqual([argument]);
+    for (const input of ['NAME', 'SCOPE', 'EXPORT'] as const) {
+      const bundle = fixedInputSchemaBundle(input);
+      expect(compileSchemaBundle(bundle).kind).toBe('compiled');
+      expect(bundle.root.artifact.role).toBe('canonical-schema');
+      expect(bundle.provenance.canonicalSources[0]!.symbol).toContain(`/properties/${input}`);
+    }
+    expect([...definition().editableArguments].sort()).toEqual(['EXPORT', 'NAME', 'SCOPE']);
     expect(definition().readOnlyArguments).toEqual([]);
     expect(definition().opcodes).toEqual(options.opcodes);
-    expect(fixedInputSchemaBundle.root.artifact.role).toBe('canonical-schema');
-    expect(fixedInputSchemaBundle.provenance.canonicalSources[0]!.symbol).toContain(`/properties/${argument}`);
   });
   it('keeps no-op raw and unrelated arguments without a patch', async () => {
     const f = fixture();
@@ -125,6 +140,41 @@ describe('fixed input owner contract', () => {
   });
 });
 
+describe('function name and scope', () => {
+  it('saves a new name that no other hat uses in the scope', async () => {
+    taken = [{name: 'jump', scope: 'sprite'}];
+    const f = fixture();f.edit('spin', undefined, 'NAME');
+    expect(await f.session.save()).toEqual({status: 'saved', changed: true});
+    expect(f.commits).toEqual([[{argument: 'NAME', value: 'spin'}]]);
+    expect(conflicts).toHaveBeenLastCalledWith({targetId: 'sprite', blockId: 'owner-block'}, 'spin', 'sprite');f.remove();
+  });
+  it('refuses to save a name already used in the same scope', async () => {
+    taken = [{name: 'jump', scope: 'sprite'}];
+    // The dialog runs owner checks when Save is pressed, not while typing.
+    const f = fixture();f.edit('jump', undefined, 'NAME');
+    expect((await f.session.save()).status).toBe('invalid');expect(f.commits).toEqual([]);
+    expect(conflicts).toHaveBeenLastCalledWith({targetId: 'sprite', blockId: 'owner-block'}, 'jump', 'sprite');f.remove();
+  });
+  it('checks the name against the scope chosen in the dialog', async () => {
+    taken = [{name: 'jump', scope: 'sprite'}];
+    const f = fixture();f.edit('global', undefined, 'SCOPE');f.edit('jump', undefined, 'NAME');
+    expect((await f.session.save()).status).toBe('invalid');expect(f.commits).toEqual([]);
+    expect(conflicts).toHaveBeenLastCalledWith({targetId: 'sprite', blockId: 'owner-block'}, 'jump', 'global');f.remove();
+  });
+  it('rechecks an unchanged name when only the scope changes', async () => {
+    taken = [{name: 'jump', scope: 'sprite'}];
+    const f = fixture(opening, false, 'jump', 'sprite');
+    conflicts.mockClear();
+    f.edit('global', undefined, 'SCOPE');
+    expect((await f.session.save()).status).toBe('invalid');expect(f.commits).toEqual([]);
+    expect(conflicts).toHaveBeenLastCalledWith({targetId: 'sprite', blockId: 'owner-block'}, 'jump', 'global');f.remove();
+  });
+  it('refuses a name that is not a valid function name', async () => {
+    const f = fixture();f.edit('two words', undefined, 'NAME');
+    expect((await f.session.save()).status).toBe('invalid');expect(f.commits).toEqual([]);f.remove();
+  });
+});
+
 describe('enum compatibility', () => {
   it('keeps unknown raw for repair without selecting the first item', async () => {
     const f = fixture('future-enum');
@@ -190,7 +240,8 @@ it('keeps the docsURI landing-page block anchor linked to generated fixed-form h
   const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
   expect(html).toContain('href="#block-defineFunction"');
   const article = html.match(/<article id="block-defineFunction"[^>]*>[\s\S]*?<\/article>/)![0];
-  expect(article).toContain('id="fixed-input-defineFunction-EXPORT"');expect(article).toContain('FixedInputs');expect(article).toContain('EXPORT');
+  expect(article).toContain('id="fixed-input-defineFunction"');expect(article).toContain('FixedInputs');
+  for (const input of ['NAME', 'SCOPE', 'EXPORT']) expect(article).toContain(input);
   expect(readFileSync(new URL('../site/schemas/block-editor-fixed-inputs.schema.json', import.meta.url), 'utf8'))
     .toBe(readFileSync(new URL('../schemas/block-editor-fixed-inputs.schema.json', import.meta.url), 'utf8'));
 });
