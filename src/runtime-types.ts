@@ -1,6 +1,7 @@
 /** The narrow slice of the TurboWarp VM runtime this extension depends on. */
 
 export interface SerializedField {
+  name?: string;
   value?: unknown;
 }
 
@@ -21,14 +22,19 @@ export interface SerializedBlock {
 }
 
 export interface RuntimeTarget {
+  id?: string;
   isOriginal?: boolean;
   isStage?: boolean;
+  /** Shared by a sprite and its clones. */
+  sprite?: unknown;
   getName?(): string;
   blocks: {_blocks: Record<string, SerializedBlock>};
 }
 
 export interface RuntimeThread {
   topBlock?: string;
+  /** The sprite, clone, or stage the thread runs as. */
+  target?: RuntimeTarget;
 }
 
 /**
@@ -45,6 +51,7 @@ export interface ThreadExecutionPort {
 
 export interface RuntimeLike {
   targets: RuntimeTarget[];
+  getTargetById?(id: string): RuntimeTarget | undefined;
   threads: RuntimeThread[];
   startHats(opcode: string, matchFields?: Record<string, string>): RuntimeThread[] | undefined;
   getThreadExecutionPort?(): ThreadExecutionPort;

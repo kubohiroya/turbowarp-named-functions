@@ -7,8 +7,11 @@
  */
 import {FunctionDispatcher, outcomeToPromise, type CallOutcome} from './function-dispatcher.js';
 import {
+  resolveFunction,
   scanFunctionDefinitions,
   toFunctionTools,
+  visibleFunctions,
+  type FunctionDefinition,
   type FunctionScan,
   type FunctionTool
 } from './function-registry.js';
@@ -18,11 +21,26 @@ import {
   type SchemaBlockOpcodes,
   type SchemaScan
 } from './schema-builder.js';
-import type {RuntimeLike, RuntimeThread} from './runtime-types.js';
+import type {RuntimeLike, RuntimeTarget, RuntimeThread} from './runtime-types.js';
 import {validateAgainstSchema} from './schema-validator.js';
 
-export type {FunctionDefinition, FunctionScan, FunctionScanOptions, FunctionTool} from './function-registry.js';
-export {FUNCTION_NAME_PATTERN, scanFunctionDefinitions, toFunctionTools} from './function-registry.js';
+export type {
+  FunctionDefinition,
+  FunctionScan,
+  FunctionScanOptions,
+  FunctionScope,
+  FunctionTool,
+  ResolvedFunction
+} from './function-registry.js';
+export {
+  FUNCTION_NAME_PATTERN,
+  resolveFunction,
+  sameSprite,
+  scanFunctionDefinitions,
+  toFunctionTools,
+  upgradeLegacyScopes,
+  visibleFunctions
+} from './function-registry.js';
 export type {SchemaBlockOpcodes, SchemaDefinition, SchemaReference, SchemaScan} from './schema-builder.js';
 export {
   MAX_SCHEMA_REFERENCE_DEPTH,
@@ -43,7 +61,11 @@ export interface PromiseRef {
 }
 
 export interface CallOptions {
-  /** Thread of the calling block. It links nested calls and detects reentrant ones. */
+  /**
+   * Thread of the calling block. Its sprite decides which functions are visible: its own sprite
+   * functions and every global one. Without it, only global functions are visible. It also links
+   * nested calls and detects reentrant ones.
+   */
   caller?: RuntimeThread;
   /** Refuse functions that are not exported as tools (for calls chosen by a model). */
   exportedOnly?: boolean;
@@ -73,7 +95,10 @@ export interface NamedFunctions {
   schemas(): SchemaScan;
   /** Functions exported as tools, in OpenAI function-calling shape. Throws if any definition is invalid. */
   tools(): FunctionTool[];
-  isDefined(name: string): boolean;
+  /** Whether a script running as `caller` can call `name`. Without a caller, global functions only. */
+  isDefined(name: string, caller?: RuntimeTarget): boolean;
+  /** Functions a script running as `caller` can call, sprite functions first. */
+  visible(caller?: RuntimeTarget): FunctionDefinition[];
 
   /** Calls a function and waits for its result. Arguments are always validated against its schema. */
   call(name: string, args: unknown, options?: CallOptions): Promise<unknown>;
@@ -156,8 +181,16 @@ class NamedFunctionsImpl implements NamedFunctions {
     return toFunctionTools(this.scan().functions);
   }
 
-  public isDefined(name: string): boolean {
-    return this.scan().functions.some((definition) => definition.name === name.trim());
+  public isDefined(name: string, caller?: RuntimeTarget): boolean {
+    return resolveFunction(this.scan().functions, name.trim(), caller) !== undefined;
+  }
+
+  public visible(caller?: RuntimeTarget): FunctionDefinition[] {
+    const functions = visibleFunctions(this.scan().functions, caller);
+    return [
+      ...functions.filter((definition) => definition.scope === 'sprite'),
+      ...functions.filter((definition) => definition.scope === 'global')
+    ];
   }
 
   public get runsSynchronously(): boolean {
@@ -170,8 +203,11 @@ class NamedFunctionsImpl implements NamedFunctions {
 
   public callNow(name: string, args: unknown, options: CallOptions = {}): CallOutcome {
     const trimmed = name.trim();
-    const definition = this.scan().functions.find((candidate) => candidate.name === trimmed);
-    if (!definition) return rejected(`Unknown function: ${trimmed}`);
+    const scan = this.scan();
+    const caller = options.caller?.target;
+    const resolved = resolveFunction(scan.functions, trimmed, caller);
+    if (!resolved) return rejected(unknownFunctionMessage(scan.functions, trimmed, caller));
+    const {definition, runAs} = resolved;
     if (options.exportedOnly && definition.exportAs !== 'tool') {
       return rejected(`Function ${trimmed} is not exported as a tool.`);
     }
@@ -179,15 +215,12 @@ class NamedFunctionsImpl implements NamedFunctions {
     if (errors.length > 0) {
       return rejected(`Invalid arguments for ${trimmed}: ${errors.join('; ')}`);
     }
-    const target = this.options.runtime.targets.find(
-      (candidate) => candidate.isOriginal !== false && candidate.blocks._blocks[definition.blockId] !== undefined
-    );
     return this.dispatcher.invokeNow({
       name: trimmed,
       args,
       caller: options.caller,
       returnSchema: definition.returns,
-      script: target ? {target, blockId: definition.blockId} : undefined
+      script: {target: runAs, blockId: definition.blockId}
     });
   }
 
@@ -275,6 +308,19 @@ class NamedFunctionsImpl implements NamedFunctions {
       if (entry.settled) this.promises.delete(id);
     }
   }
+}
+
+/** Names the sprite that owns a function the caller cannot see, so the fix is obvious. */
+function unknownFunctionMessage(
+  functions: readonly FunctionDefinition[],
+  name: string,
+  caller: RuntimeTarget | undefined
+): string {
+  const elsewhere = functions.find((definition) => definition.name === name);
+  if (!elsewhere) return `Unknown function: ${name}`;
+  return caller
+    ? `Function ${name} belongs to ${elsewhere.targetName}; make it for all sprites to call it from here.`
+    : `Function ${name} belongs to ${elsewhere.targetName}; only functions for all sprites can be called from outside.`;
 }
 
 function rejected(message: string): CallOutcome {

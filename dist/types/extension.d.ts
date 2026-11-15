@@ -13,6 +13,10 @@ type Util = BlockUtilityLike & {
 export declare class NamedFunctionsExtension implements TurboWarpExtension {
     private lastErrorMessage;
     private readonly functions;
+    private readonly runtime;
+    private readonly scopeChecked;
+    /** Old hats can arrive with a project, an uploaded sprite, or this extension being added. */
+    private readonly upgradeScopes;
     private readonly unregisterFixedInputEditors;
     constructor(deps: NamedFunctionsExtensionDependencies);
     dispose(): void;
@@ -39,12 +43,19 @@ export declare class NamedFunctionsExtension implements TurboWarpExtension {
      * calling script continues in the same step. Otherwise returns a promise and the script waits.
      */
     callFunction(args: Args, util?: Util): string | number | boolean | Promise<string | number | boolean>;
+    callFunctionFromMenu(args: Args, util?: Util): string | number | boolean | Promise<string | number | boolean>;
+    /** Lists the functions the edited sprite can call, for `call [FUNCTION] with [ARGS]`. */
+    functionMenu(targetId?: string | null): Array<{
+        text: string;
+        value: string;
+    }>;
     startFunction(args: Args, util?: Util): string;
     awaitResult(args: Args): Promise<string | number | boolean>;
     awaitAll(args: Args): Promise<string>;
     isSettled(args: Args): boolean;
-    isDefined(args: Args): boolean;
+    isDefined(args: Args, util?: Util): boolean;
     lastError(): string;
+    private callByName;
     private guard;
     private toScratchBlock;
 }

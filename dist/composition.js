@@ -194,6 +194,8 @@ var FunctionDispatcher = class {
 		if (bound) return bound.name === name.trim();
 		const invocation = this.starting;
 		if (!invocation || invocation.name !== name.trim()) return false;
+		const script = invocation.script;
+		if (script && (thread.topBlock !== script.blockId || thread.target && thread.target !== script.target)) return false;
 		invocation.thread = thread;
 		this.byThread.set(thread, invocation);
 		this.starting = null;
@@ -257,6 +259,7 @@ var FunctionDispatcher = class {
 			args: request.args,
 			...request.returnSchema === void 0 ? {} : { returnSchema: request.returnSchema },
 			chain,
+			...request.script ? { script: request.script } : {},
 			promise,
 			resolve,
 			reject,
@@ -400,9 +403,8 @@ var MAX_DESCRIPTION_LENGTH = 1024;
 * tool contract sent to the model before any script runs, so they must be literal text.
 */
 function scanFunctionDefinitions(targets, hatOpcode, options = {}) {
-	const functions = [];
+	const scanned = [];
 	const errors = [];
-	const seen = /* @__PURE__ */ new Map();
 	for (const target of targets) {
 		if (target.isOriginal === false) continue;
 		const targetName = target.getName?.() ?? (target.isStage ? "Stage" : "sprite");
@@ -411,21 +413,102 @@ function scanFunctionDefinitions(targets, hatOpcode, options = {}) {
 			if (block.opcode !== hatOpcode || block.topLevel === false) continue;
 			const where = `${targetName} (block ${block.id})`;
 			try {
-				const definition = readDefinition(block, blocks, targetName, options);
-				const previous = seen.get(definition.name);
-				if (previous !== void 0) throw new Error(`function "${definition.name}" is already defined in ${previous}`);
-				seen.set(definition.name, where);
-				functions.push(definition);
+				scanned.push({
+					definition: readDefinition(block, blocks, targetName, target, options),
+					where
+				});
 			} catch (error) {
 				errors.push(`${where}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
+	}
+	const functions = [];
+	const globals = /* @__PURE__ */ new Map();
+	for (const { definition, where } of scanned) {
+		if (definition.scope !== "global") continue;
+		const previous = globals.get(definition.name);
+		if (previous !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+			continue;
+		}
+		globals.set(definition.name, where);
+		functions.push(definition);
+	}
+	const locals = /* @__PURE__ */ new Map();
+	for (const { definition, where } of scanned) {
+		if (definition.scope !== "sprite") continue;
+		const global = globals.get(definition.name);
+		if (global !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined for all sprites in ${global}`);
+			continue;
+		}
+		const own = locals.get(definition.target) ?? /* @__PURE__ */ new Map();
+		locals.set(definition.target, own);
+		const previous = own.get(definition.name);
+		if (previous !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+			continue;
+		}
+		own.set(definition.name, where);
+		functions.push(definition);
 	}
 	functions.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 	return {
 		functions,
 		errors
 	};
+}
+/**
+* Writes `SCOPE = global` into `define function` hats saved before SCOPE existed, so the stored
+* value matches what the block shows (the menu's first choice) and a change made on the block is
+* kept: the VM ignores a change to a field the block does not have. Each sprite is checked once;
+* pass the same `checked` set every time.
+*/
+function upgradeLegacyScopes(targets, hatOpcode, checked) {
+	let upgraded = 0;
+	for (const target of targets) {
+		if (target.isOriginal === false || checked.has(target)) continue;
+		checked.add(target);
+		for (const block of Object.values(target.blocks._blocks)) {
+			if (block.opcode !== hatOpcode || block.topLevel === false || block.fields?.SCOPE) continue;
+			block.fields = {
+				...block.fields,
+				SCOPE: {
+					name: "SCOPE",
+					value: "global"
+				}
+			};
+			upgraded += 1;
+		}
+	}
+	return upgraded;
+}
+/** True when both are the same sprite: the original, one of its clones, or the stage itself. */
+function sameSprite(left, right) {
+	return left === right || left.sprite !== void 0 && left.sprite === right.sprite;
+}
+/**
+* Finds the function a call names. A caller's own sprite function runs as the caller (a clone runs it
+* as itself, as with a custom block); a global function runs as the sprite or stage that defines it.
+* Without a caller (a call from outside the project), only global functions are visible.
+*/
+function resolveFunction(functions, name, caller) {
+	if (caller) {
+		const own = functions.find((definition) => definition.scope === "sprite" && definition.name === name && sameSprite(definition.target, caller));
+		if (own) return {
+			definition: own,
+			runAs: caller
+		};
+	}
+	const global = functions.find((definition) => definition.scope === "global" && definition.name === name);
+	return global ? {
+		definition: global,
+		runAs: global.target
+	} : void 0;
+}
+/** Functions a script of `caller` can call: its sprite's own functions, then the global ones. */
+function visibleFunctions(functions, caller) {
+	return functions.filter((definition) => definition.scope === "global" || caller !== void 0 && sameSprite(definition.target, caller));
 }
 function toFunctionTools(functions) {
 	return functions.filter((definition) => definition.exportAs === "tool").map((definition) => ({
@@ -435,7 +518,7 @@ function toFunctionTools(functions) {
 		parameters: definition.parameters
 	}));
 }
-function readDefinition(block, blocks, targetName, options) {
+function readDefinition(block, blocks, targetName, target, options) {
 	const name = readLiteralInput(block, blocks, "NAME").trim();
 	if (!FUNCTION_NAME_PATTERN.test(name)) throw new Error("function name must be 1-64 letters, digits, \"_\" or \"-\"");
 	const description = readLiteralInput(block, blocks, "DESCRIPTION").trim();
@@ -445,15 +528,26 @@ function readDefinition(block, blocks, targetName, options) {
 	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false, options);
 	const exportAs = String(block.fields?.EXPORT?.value ?? "none") === "tool" ? "tool" : "none";
 	if (exportAs === "tool" && description.length === 0) throw new Error("a function exported as a tool needs a description");
+	const scope = readScope(block);
+	if (exportAs === "tool" && scope !== "global") throw new Error("a function exported as a tool must be for all sprites");
 	return {
 		name,
+		scope,
 		description,
 		parameters,
 		...returns ? { returns } : {},
 		exportAs,
 		targetName,
+		target,
 		blockId: block.id
 	};
+}
+/** SCOPE is a menu field. Hats saved before it existed have none and keep their global meaning. */
+function readScope(block) {
+	const value = block.fields?.SCOPE?.value;
+	if (value === void 0 || value === null || value === "global") return "global";
+	if (value === "sprite") return "sprite";
+	throw new Error(`unknown function scope "${String(value)}"`);
 }
 /**
 * SCHEMA and RETURNS hold either JSON Schema text or, when the consumer supports it, the name of a
@@ -827,8 +921,12 @@ var NamedFunctionsImpl = class {
 		if (errors.length > 0) throw new Error(`Invalid function definitions: ${errors.join("; ")}`);
 		return toFunctionTools(this.scan().functions);
 	}
-	isDefined(name) {
-		return this.scan().functions.some((definition) => definition.name === name.trim());
+	isDefined(name, caller) {
+		return resolveFunction(this.scan().functions, name.trim(), caller) !== void 0;
+	}
+	visible(caller) {
+		const functions = visibleFunctions(this.scan().functions, caller);
+		return [...functions.filter((definition) => definition.scope === "sprite"), ...functions.filter((definition) => definition.scope === "global")];
 	}
 	get runsSynchronously() {
 		return this.dispatcher.runsSynchronously;
@@ -838,21 +936,23 @@ var NamedFunctionsImpl = class {
 	}
 	callNow(name, args, options = {}) {
 		const trimmed = name.trim();
-		const definition = this.scan().functions.find((candidate) => candidate.name === trimmed);
-		if (!definition) return rejected(`Unknown function: ${trimmed}`);
+		const scan = this.scan();
+		const caller = options.caller?.target;
+		const resolved = resolveFunction(scan.functions, trimmed, caller);
+		if (!resolved) return rejected(unknownFunctionMessage(scan.functions, trimmed, caller));
+		const { definition, runAs } = resolved;
 		if (options.exportedOnly && definition.exportAs !== "tool") return rejected(`Function ${trimmed} is not exported as a tool.`);
 		const errors = validateAgainstSchema(args, definition.parameters);
 		if (errors.length > 0) return rejected(`Invalid arguments for ${trimmed}: ${errors.join("; ")}`);
-		const target = this.options.runtime.targets.find((candidate) => candidate.isOriginal !== false && candidate.blocks._blocks[definition.blockId] !== void 0);
 		return this.dispatcher.invokeNow({
 			name: trimmed,
 			args,
 			caller: options.caller,
 			returnSchema: definition.returns,
-			script: target ? {
-				target,
+			script: {
+				target: runAs,
 				blockId: definition.blockId
-			} : void 0
+			}
 		});
 	}
 	start(name, args, options = {}) {
@@ -920,6 +1020,12 @@ var NamedFunctionsImpl = class {
 		}
 	}
 };
+/** Names the sprite that owns a function the caller cannot see, so the fix is obvious. */
+function unknownFunctionMessage(functions, name, caller) {
+	const elsewhere = functions.find((definition) => definition.name === name);
+	if (!elsewhere) return `Unknown function: ${name}`;
+	return caller ? `Function ${name} belongs to ${elsewhere.targetName}; make it for all sprites to call it from here.` : `Function ${name} belongs to ${elsewhere.targetName}; only functions for all sprites can be called from outside.`;
+}
 function rejected(message) {
 	return {
 		state: "rejected",
@@ -930,4 +1036,4 @@ function messageOf(error) {
 	return error instanceof Error ? error.message : String(error);
 }
 //#endregion
-export { FUNCTION_NAME_PATTERN, MAX_SCHEMA_REFERENCE_DEPTH, MAX_SYNC_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, createNamedFunctions, parseJsonOrText, parseSchemaReference, readArgumentPath, resolveSchemaReference, scanFunctionDefinitions, scanSchemaDefinitions, toFunctionTools, toScratchValue, validateAgainstSchema, validateSchemaDefinition };
+export { FUNCTION_NAME_PATTERN, MAX_SCHEMA_REFERENCE_DEPTH, MAX_SYNC_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, createNamedFunctions, parseJsonOrText, parseSchemaReference, readArgumentPath, resolveFunction, resolveSchemaReference, sameSprite, scanFunctionDefinitions, scanSchemaDefinitions, toFunctionTools, toScratchValue, upgradeLegacyScopes, validateAgainstSchema, validateSchemaDefinition, visibleFunctions };

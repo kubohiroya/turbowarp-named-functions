@@ -35,7 +35,7 @@ function setup(functionSpecs: readonly FunctionHatSpec[], schemaSpecs: readonly 
     schemaBlockOpcodes: testSchemaOpcodes
   });
   const run = (name: string) => {
-    const thread = runtime.spawnThread();
+    const thread = runtime.spawnHatThread(OPCODE, name);
     if (!functions.matchHat(name, thread)) throw new Error(`hat ${name} did not match`);
     return thread;
   };

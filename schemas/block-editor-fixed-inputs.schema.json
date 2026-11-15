@@ -5,6 +5,17 @@
     "defineFunction": {
       "type": "object",
       "properties": {
+        "NAME": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "SCOPE": {
+          "type": "string",
+          "enum": [
+            "global",
+            "sprite"
+          ]
+        },
         "EXPORT": {
           "type": "string",
           "enum": [

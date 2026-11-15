@@ -19,106 +19,541 @@ var extensionConfig = {
 	docsURI: "https://kubohiroya.github.io/turbowarp-named-functions/",
 	blockIconURI: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCI+PHJlY3QgeD0iNCIgeT0iOCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzhBNTVENyIvPjx0ZXh0IHg9IjI0IiB5PSIzMSIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9ImJvbGQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmYiPmYoeCk8L3RleHQ+PC9zdmc+"
 };
+//#endregion
+//#region src/block-literals.ts
+function readLiteralInput(block, blocks, inputName) {
+	const input = block.inputs?.[inputName];
+	if (!input) throw new Error(`${inputName} is missing`);
+	if (input.block && input.block !== input.shadow) throw new Error(`${inputName} must be literal text, not a reporter block`);
+	const shadowId = input.shadow ?? input.block;
+	const shadow = shadowId ? blocks[shadowId] : void 0;
+	const field = shadow?.fields ? Object.values(shadow.fields)[0] : void 0;
+	if (!field) throw new Error(`${inputName} is missing`);
+	return String(field.value ?? "");
+}
+function readOptionalLiteralInput(block, blocks, inputName) {
+	if (!block.inputs?.[inputName]) return void 0;
+	return readLiteralInput(block, blocks, inputName);
+}
+/** Reads a dropdown that does not accept reporters; the VM stores it as a field on the block. */
+function readMenuField(block, fieldName) {
+	const field = block.fields?.[fieldName];
+	if (!field) throw new Error(`${fieldName} is missing`);
+	return String(field.value ?? "");
+}
+/**
+* The blocks stacked under `block`, in order. Shadow blocks are skipped, and a `next` chain that
+* loops or leaves the container stops the walk instead of hanging.
+*/
+function stackBelow(block, blocks) {
+	const stack = [];
+	const seen = /* @__PURE__ */ new Set([block.id]);
+	let nextId = block.next ?? null;
+	while (nextId) {
+		if (seen.has(nextId)) break;
+		seen.add(nextId);
+		const next = blocks[nextId];
+		if (!next) break;
+		if (next.shadow !== true) stack.push(next);
+		nextId = next.next ?? null;
+	}
+	return stack;
+}
+//#endregion
+//#region src/schema-validator.ts
+/**
+* A small JSON Schema validator for function arguments and returns. It interprets the schema at run time and
+* never generates code, so it also works where `eval` is unavailable (for example Cloudflare Workers).
+*
+* Supported keywords: type, properties, required, additionalProperties (boolean), items, enum,
+* const, minimum, maximum, minLength, maxLength, minItems, maxItems. Other keywords, such as
+* description and title, are ignored.
+*/
+function validateAgainstSchema(value, schema, path = "$") {
+	const rule = asRecord(schema);
+	if (!rule) throw new Error(`${path} must be a JSON Schema object`);
+	assertSchemaNode(rule, path);
+	return validateValue(value, rule, path);
+}
+/** Reject malformed schemas before a function definition or call can use them. */
+function validateSchemaDefinition(schema, label = "schema") {
+	const rule = asRecord(schema);
+	if (!rule) throw new Error(`${label} must be a JSON object`);
+	assertSchemaNode(rule, label);
+}
+function validateValue(value, rule, path) {
+	const errors = [];
+	if (rule.type !== void 0) {
+		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
+		if (!types.some((type) => matchesType(value, type))) return [`${path} must be ${types.join(" or ")}`];
+	}
+	if (Array.isArray(rule.enum) && !rule.enum.some((candidate) => deepEqual(candidate, value))) errors.push(`${path} must be one of ${rule.enum.map((item) => JSON.stringify(item)).join(", ")}`);
+	if ("const" in rule && !deepEqual(rule.const, value)) errors.push(`${path} must be ${JSON.stringify(rule.const)}`);
+	if (typeof value === "number") {
+		if (typeof rule.minimum === "number" && value < rule.minimum) errors.push(`${path} must be >= ${rule.minimum}`);
+		if (typeof rule.maximum === "number" && value > rule.maximum) errors.push(`${path} must be <= ${rule.maximum}`);
+	}
+	if (typeof value === "string") {
+		const length = [...value].length;
+		if (typeof rule.minLength === "number" && length < rule.minLength) errors.push(`${path} must have at least ${rule.minLength} characters`);
+		if (typeof rule.maxLength === "number" && length > rule.maxLength) errors.push(`${path} must have at most ${rule.maxLength} characters`);
+	}
+	if (Array.isArray(value)) {
+		if (typeof rule.minItems === "number" && value.length < rule.minItems) errors.push(`${path} must have at least ${rule.minItems} items`);
+		if (typeof rule.maxItems === "number" && value.length > rule.maxItems) errors.push(`${path} must have at most ${rule.maxItems} items`);
+		if (rule.items !== void 0) value.forEach((item, index) => errors.push(...validateValue(item, rule.items, `${path}[${index}]`)));
+	}
+	const object = asRecord(value);
+	if (object) {
+		const properties = asRecord(rule.properties) ?? {};
+		if (Array.isArray(rule.required)) {
+			for (const name of rule.required) if (typeof name === "string" && !Object.hasOwn(object, name)) errors.push(`${path}.${name} is required`);
+		}
+		for (const [name, child] of Object.entries(object)) if (Object.hasOwn(properties, name)) errors.push(...validateValue(child, properties[name], `${path}.${name}`));
+		else if (rule.additionalProperties === false) errors.push(`${path}.${name} is not allowed`);
+	}
+	return errors;
+}
+function assertSchemaNode(rule, path) {
+	const validTypes = /* @__PURE__ */ new Set([
+		"object",
+		"array",
+		"string",
+		"number",
+		"integer",
+		"boolean",
+		"null"
+	]);
+	if (rule.type !== void 0) {
+		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
+		if (types.length === 0 || types.some((type) => typeof type !== "string" || !validTypes.has(type))) throw new Error(`${path}.type must be a supported JSON Schema type or non-empty type array`);
+	}
+	if (rule.properties !== void 0) {
+		const properties = asRecord(rule.properties);
+		if (!properties) throw new Error(`${path}.properties must be an object`);
+		for (const [name, child] of Object.entries(properties)) {
+			const childRule = asRecord(child);
+			if (!childRule) throw new Error(`${path}.properties.${name} must be a JSON Schema object`);
+			assertSchemaNode(childRule, `${path}.properties.${name}`);
+		}
+	}
+	if (rule.required !== void 0 && (!Array.isArray(rule.required) || rule.required.some((name) => typeof name !== "string"))) throw new Error(`${path}.required must be an array of strings`);
+	if (rule.additionalProperties !== void 0 && typeof rule.additionalProperties !== "boolean") throw new Error(`${path}.additionalProperties must be a boolean`);
+	if (rule.items !== void 0) {
+		const items = asRecord(rule.items);
+		if (!items) throw new Error(`${path}.items must be a JSON Schema object`);
+		assertSchemaNode(items, `${path}.items`);
+	}
+	if (rule.enum !== void 0 && (!Array.isArray(rule.enum) || rule.enum.length === 0)) throw new Error(`${path}.enum must be a non-empty array`);
+	for (const keyword of ["minimum", "maximum"]) if (rule[keyword] !== void 0 && (typeof rule[keyword] !== "number" || !Number.isFinite(rule[keyword]))) throw new Error(`${path}.${keyword} must be a finite number`);
+	for (const keyword of [
+		"minLength",
+		"maxLength",
+		"minItems",
+		"maxItems"
+	]) {
+		const value = rule[keyword];
+		if (value !== void 0 && (typeof value !== "number" || !Number.isInteger(value) || value < 0)) throw new Error(`${path}.${keyword} must be a non-negative integer`);
+	}
+	if (typeof rule.minimum === "number" && typeof rule.maximum === "number" && rule.minimum > rule.maximum) throw new Error(`${path}.minimum cannot exceed maximum`);
+	if (typeof rule.minLength === "number" && typeof rule.maxLength === "number" && rule.minLength > rule.maxLength) throw new Error(`${path}.minLength cannot exceed maxLength`);
+	if (typeof rule.minItems === "number" && typeof rule.maxItems === "number" && rule.minItems > rule.maxItems) throw new Error(`${path}.minItems cannot exceed maxItems`);
+}
+function matchesType(value, type) {
+	switch (type) {
+		case "object": return asRecord(value) !== null;
+		case "array": return Array.isArray(value);
+		case "string": return typeof value === "string";
+		case "number": return typeof value === "number" && Number.isFinite(value);
+		case "integer": return typeof value === "number" && Number.isInteger(value);
+		case "boolean": return typeof value === "boolean";
+		case "null": return value === null;
+		default: return false;
+	}
+}
+function deepEqual(left, right) {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+function asRecord(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
+//#endregion
+//#region src/function-registry.ts
+var FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
+var MAX_DESCRIPTION_LENGTH = 1024;
+/**
+* Reads every `define function` hat in the project. NAME, DESCRIPTION, and SCHEMA are part of the
+* tool contract sent to the model before any script runs, so they must be literal text.
+*/
+function scanFunctionDefinitions(targets, hatOpcode, options = {}) {
+	const scanned = [];
+	const errors = [];
+	for (const target of targets) {
+		if (target.isOriginal === false) continue;
+		const targetName = target.getName?.() ?? (target.isStage ? "Stage" : "sprite");
+		const blocks = target.blocks._blocks;
+		for (const block of Object.values(blocks)) {
+			if (block.opcode !== hatOpcode || block.topLevel === false) continue;
+			const where = `${targetName} (block ${block.id})`;
+			try {
+				scanned.push({
+					definition: readDefinition(block, blocks, targetName, target, options),
+					where
+				});
+			} catch (error) {
+				errors.push(`${where}: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+	}
+	const functions = [];
+	const globals = /* @__PURE__ */ new Map();
+	for (const { definition, where } of scanned) {
+		if (definition.scope !== "global") continue;
+		const previous = globals.get(definition.name);
+		if (previous !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+			continue;
+		}
+		globals.set(definition.name, where);
+		functions.push(definition);
+	}
+	const locals = /* @__PURE__ */ new Map();
+	for (const { definition, where } of scanned) {
+		if (definition.scope !== "sprite") continue;
+		const global = globals.get(definition.name);
+		if (global !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined for all sprites in ${global}`);
+			continue;
+		}
+		const own = locals.get(definition.target) ?? /* @__PURE__ */ new Map();
+		locals.set(definition.target, own);
+		const previous = own.get(definition.name);
+		if (previous !== void 0) {
+			errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+			continue;
+		}
+		own.set(definition.name, where);
+		functions.push(definition);
+	}
+	functions.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+	return {
+		functions,
+		errors
+	};
+}
+/**
+* Writes `SCOPE = global` into `define function` hats saved before SCOPE existed, so the stored
+* value matches what the block shows (the menu's first choice) and a change made on the block is
+* kept: the VM ignores a change to a field the block does not have. Each sprite is checked once;
+* pass the same `checked` set every time.
+*/
+function upgradeLegacyScopes(targets, hatOpcode, checked) {
+	let upgraded = 0;
+	for (const target of targets) {
+		if (target.isOriginal === false || checked.has(target)) continue;
+		checked.add(target);
+		for (const block of Object.values(target.blocks._blocks)) {
+			if (block.opcode !== hatOpcode || block.topLevel === false || block.fields?.SCOPE) continue;
+			block.fields = {
+				...block.fields,
+				SCOPE: {
+					name: "SCOPE",
+					value: "global"
+				}
+			};
+			upgraded += 1;
+		}
+	}
+	return upgraded;
+}
+/**
+* Whether naming the hat `blockId` of `target` as `name` with `scope` would clash with another
+* `define function` hat, under the same rules as `scanFunctionDefinitions`: a global name is unique
+* in the project, and a sprite name is unique in its sprite and differs from every global name.
+* Hats whose NAME is not literal text are not compared.
+*/
+function hasNameConflict(targets, hatOpcode, candidate) {
+	const name = candidate.name.trim();
+	for (const target of targets) {
+		if (target.isOriginal === false) continue;
+		const blocks = target.blocks._blocks;
+		for (const block of Object.values(blocks)) {
+			if (block.opcode !== hatOpcode || block.topLevel === false || block.id === candidate.blockId) continue;
+			let other;
+			let otherScope;
+			try {
+				other = readLiteralInput(block, blocks, "NAME").trim();
+				otherScope = readScope(block);
+			} catch {
+				continue;
+			}
+			if (other !== name) continue;
+			if (candidate.scope === "global" || otherScope === "global" || sameSprite(target, candidate.target)) return true;
+		}
+	}
+	return false;
+}
+/** True when both are the same sprite: the original, one of its clones, or the stage itself. */
+function sameSprite(left, right) {
+	return left === right || left.sprite !== void 0 && left.sprite === right.sprite;
+}
+/**
+* Finds the function a call names. A caller's own sprite function runs as the caller (a clone runs it
+* as itself, as with a custom block); a global function runs as the sprite or stage that defines it.
+* Without a caller (a call from outside the project), only global functions are visible.
+*/
+function resolveFunction(functions, name, caller) {
+	if (caller) {
+		const own = functions.find((definition) => definition.scope === "sprite" && definition.name === name && sameSprite(definition.target, caller));
+		if (own) return {
+			definition: own,
+			runAs: caller
+		};
+	}
+	const global = functions.find((definition) => definition.scope === "global" && definition.name === name);
+	return global ? {
+		definition: global,
+		runAs: global.target
+	} : void 0;
+}
+/** Functions a script of `caller` can call: its sprite's own functions, then the global ones. */
+function visibleFunctions(functions, caller) {
+	return functions.filter((definition) => definition.scope === "global" || caller !== void 0 && sameSprite(definition.target, caller));
+}
+function toFunctionTools(functions) {
+	return functions.filter((definition) => definition.exportAs === "tool").map((definition) => ({
+		type: "function",
+		name: definition.name,
+		description: definition.description,
+		parameters: definition.parameters
+	}));
+}
+function readDefinition(block, blocks, targetName, target, options) {
+	const name = readLiteralInput(block, blocks, "NAME").trim();
+	if (!FUNCTION_NAME_PATTERN.test(name)) throw new Error("function name must be 1-64 letters, digits, \"_\" or \"-\"");
+	const description = readLiteralInput(block, blocks, "DESCRIPTION").trim();
+	if (description.length > 1024) throw new Error(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
+	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"), "args schema", true, options);
+	const returnsText = readOptionalLiteralInput(block, blocks, "RETURNS");
+	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false, options);
+	const exportAs = String(block.fields?.EXPORT?.value ?? "none") === "tool" ? "tool" : "none";
+	if (exportAs === "tool" && description.length === 0) throw new Error("a function exported as a tool needs a description");
+	const scope = readScope(block);
+	if (exportAs === "tool" && scope !== "global") throw new Error("a function exported as a tool must be for all sprites");
+	return {
+		name,
+		scope,
+		description,
+		parameters,
+		...returns ? { returns } : {},
+		exportAs,
+		targetName,
+		target,
+		blockId: block.id
+	};
+}
+/** SCOPE is a menu field. Hats saved before it existed have none and keep their global meaning. */
+function readScope(block) {
+	const value = block.fields?.SCOPE?.value;
+	if (value === void 0 || value === null || value === "global") return "global";
+	if (value === "sprite") return "sprite";
+	throw new Error(`unknown function scope "${String(value)}"`);
+}
+/**
+* SCHEMA and RETURNS hold either JSON Schema text or, when the consumer supports it, the name of a
+* `define schema` hat. Text that is not JSON is treated as a name, so existing JSON projects are
+* unaffected.
+*/
+function parseSchema(text, label, requireObjectType, options) {
+	let value;
+	try {
+		value = JSON.parse(text);
+	} catch {
+		if (options.resolveSchema) return resolveNamed(text, label, requireObjectType, options.resolveSchema);
+		throw new Error(`${label} must be valid JSON`);
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
+	const schema = value;
+	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
+	validateSchemaDefinition(schema, label);
+	return schema;
+}
+function resolveNamed(text, label, requireObjectType, resolveSchema) {
+	const schema = resolveSchema(text, label);
+	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
+	validateSchemaDefinition(schema, label);
+	return schema;
+}
 var block_editor_fixed_inputs_schema_default = {
 	$schema: "https://json-schema.org/draft/2020-12/schema",
 	$id: "https://kubohiroya.github.io/turbowarp-named-functions/schemas/block-editor-fixed-inputs.schema.json",
 	$defs: { "defineFunction": {
 		"type": "object",
-		"properties": { "EXPORT": {
-			"type": "string",
-			"enum": ["none", "tool"]
-		} },
+		"properties": {
+			"NAME": {
+				"type": "string",
+				"pattern": "^[A-Za-z0-9_-]{1,64}$"
+			},
+			"SCOPE": {
+				"type": "string",
+				"enum": ["global", "sprite"]
+			},
+			"EXPORT": {
+				"type": "string",
+				"enum": ["none", "tool"]
+			}
+		},
 		"required": ["EXPORT"],
 		"additionalProperties": true
 	} }
 };
 //#endregion
 //#region src/fixed-input-schema.ts
-var source = {
-	repository: "turbowarp-named-functions",
-	path: "schemas/block-editor-fixed-inputs.schema.json",
-	symbol: "#/$defs/defineFunction/properties/EXPORT"
-};
-/** The on-disk owner Schema is canonical; this is its single-field projection. */
-var fixedInputSchemaBundle = {
-	identity: {
-		ownerId: "turbowarp-named-functions",
-		contractId: "defineFunction.EXPORT",
-		revision: "fixed-inputs-v1",
-		variantId: "default"
-	},
-	dialect: "2020-12",
-	root: {
-		retrievalUri: "https://kubohiroya.github.io/turbowarp-named-functions/schemas/defineFunction-EXPORT.schema.json",
-		document: block_editor_fixed_inputs_schema_default.$defs.defineFunction.properties.EXPORT,
-		artifact: {
-			role: "canonical-schema",
-			source
+var FIXED_INPUT_CONTRACT_REVISION = "fixed-inputs-v2";
+/** The on-disk owner Schema is canonical; each bundle is its single-field projection. */
+function fixedInputSchemaBundle(argument) {
+	const source = {
+		repository: "turbowarp-named-functions",
+		path: "schemas/block-editor-fixed-inputs.schema.json",
+		symbol: `#/$defs/defineFunction/properties/${argument}`
+	};
+	return {
+		identity: {
+			ownerId: "turbowarp-named-functions",
+			contractId: `defineFunction.${argument}`,
+			revision: FIXED_INPUT_CONTRACT_REVISION,
+			variantId: "default"
+		},
+		dialect: "2020-12",
+		root: {
+			retrievalUri: `https://kubohiroya.github.io/turbowarp-named-functions/schemas/defineFunction-${argument}.schema.json`,
+			document: block_editor_fixed_inputs_schema_default.$defs.defineFunction.properties[argument],
+			artifact: {
+				role: "canonical-schema",
+				source
+			}
+		},
+		resources: [],
+		provenance: {
+			canonicalSources: [source, {
+				repository: "turbowarp-named-functions",
+				path: "src/function-registry.ts",
+				symbol: "readDefinition"
+			}],
+			generatedFiles: [{
+				repository: "turbowarp-named-functions",
+				path: "site/schemas/block-editor-fixed-inputs.schema.json"
+			}],
+			referenceSchemas: [],
+			generationSources: [{
+				repository: "turbowarp-named-functions",
+				path: "scripts/generate-fixed-input-docs.mjs"
+			}]
 		}
-	},
-	resources: [],
-	provenance: {
-		canonicalSources: [source, {
-			repository: "turbowarp-named-functions",
-			path: "src/function-registry.ts",
-			symbol: "readDefinition"
-		}],
-		generatedFiles: [{
-			repository: "turbowarp-named-functions",
-			path: "site/schemas/block-editor-fixed-inputs.schema.json"
-		}],
-		referenceSchemas: [],
-		generationSources: [{
-			repository: "turbowarp-named-functions",
-			path: "scripts/generate-fixed-input-docs.mjs"
-		}]
-	}
-};
+	};
+}
 //#endregion
 //#region src/fixed-input-editors.ts
-var choices = ["none", "tool"];
-var fixedInputEditorDefinitions = [{
-	apiVersion: 1,
-	extensionId: extensionConfig.id,
-	editorId: "defineFunction-fixed-inputs",
-	opcodes: [`${extensionConfig.id}_defineFunction`],
-	contractId: "turbowarp-named-functions:defineFunction.EXPORT",
-	contractRevision: "fixed-inputs-v1",
-	bindings: [{
-		argument: "EXPORT",
-		schemaBundle: fixedInputSchemaBundle,
-		control: {
-			kind: "enum",
-			label: "EXPORT",
-			choices: [{
-				"value": "none",
-				"label": "none"
+var exportChoices = ["none", "tool"];
+var scopeChoices = ["global", "sprite"];
+var literalString = (value) => {
+	if (typeof value !== "string") throw new TypeError("Expected literal text.");
+	return value;
+};
+var choiceBinding = (argument, choices, labels) => ({
+	argument,
+	schemaBundle: fixedInputSchemaBundle(argument),
+	control: {
+		kind: "enum",
+		label: argument,
+		choices: choices.map((value) => ({
+			value,
+			label: labels[value] ?? value
+		}))
+	},
+	read: literalString,
+	encode(value) {
+		if (typeof value !== "string" || !choices.includes(value)) throw new TypeError(`Unsupported ${argument}.`);
+		return value;
+	},
+	validateCandidate(value) {
+		return typeof value === "string" && choices.includes(value) ? [] : [{
+			path: `/inputs/${argument}`,
+			message: `Unsupported ${argument}.`
+		}];
+	}
+});
+/** NAME is checked against the other hats in the scope the dialog currently selects. */
+var nameBinding = (scope, conflicts) => ({
+	argument: "NAME",
+	schemaBundle: fixedInputSchemaBundle("NAME"),
+	control: {
+		kind: "text",
+		label: "NAME"
+	},
+	read: literalString,
+	encode(value) {
+		if (typeof value !== "string") throw new TypeError("Expected a function name.");
+		return value.trim();
+	},
+	validateCandidate(value, _context, snapshot) {
+		if (typeof value !== "string" || !FUNCTION_NAME_PATTERN.test(value)) return [{
+			path: "/inputs/NAME",
+			message: "Function names are 1-64 letters, digits, \"_\" or \"-\"."
+		}];
+		return conflicts({
+			targetId: snapshot.targetId,
+			blockId: snapshot.blockId
+		}, value, scope) ? [{
+			path: "/inputs/NAME",
+			message: "A function with this name already exists in this scope."
+		}] : [];
+	}
+});
+/**
+* The `define function` dialog: NAME, SCOPE, and EXPORT. NAME is validated against the scope chosen
+* in the dialog, so a name already used in that scope disables Save. DESCRIPTION, SCHEMA, and RETURNS
+* are left to the block.
+*/
+function createFixedInputEditorDefinitions(conflicts) {
+	return [{
+		apiVersion: 1,
+		extensionId: extensionConfig.id,
+		editorId: "defineFunction-fixed-inputs",
+		opcodes: [`${extensionConfig.id}_defineFunction`],
+		contractId: "turbowarp-named-functions:defineFunction",
+		contractRevision: FIXED_INPUT_CONTRACT_REVISION,
+		bindings: [
+			nameBinding("global", conflicts),
+			choiceBinding("SCOPE", scopeChoices, {
+				global: "all sprites",
+				sprite: "this sprite only"
+			}),
+			choiceBinding("EXPORT", exportChoices, {})
+		],
+		dependencies: [{
+			selector: "SCOPE",
+			dependents: ["NAME"]
+		}],
+		branchPolicies: [{
+			selector: "SCOPE",
+			cases: [{
+				values: ["global"],
+				activeDependents: ["NAME"],
+				bindings: [nameBinding("global", conflicts)]
 			}, {
-				"value": "tool",
-				"label": "tool"
+				values: ["sprite"],
+				activeDependents: ["NAME"],
+				bindings: [nameBinding("sprite", conflicts)]
 			}]
-		},
-		read(value) {
-			if (typeof value !== "string") throw new TypeError("Expected a literal export mode.");
-			return value;
-		},
-		encode(value) {
-			if (typeof value !== "string" || !choices.includes(value)) throw new TypeError("Unsupported export mode.");
-			return value;
-		},
-		validateCandidate(value) {
-			return typeof value === "string" && choices.includes(value) ? [] : [{
-				path: "/inputs/EXPORT",
-				message: "Unsupported export mode."
-			}];
-		}
-	}],
-	validationContext: () => ({
-		consumerId: extensionConfig.id,
-		nowMs: Date.now(),
-		settings: null
-	})
-}];
+		}],
+		validationContext: () => ({
+			consumerId: extensionConfig.id,
+			nowMs: Date.now(),
+			settings: null
+		})
+	}];
+}
 /** Register metadata only; the GUI startup capability owns editor activation. */
 function registerFixedInputEditors(scratch, definitions, runtimeOverride) {
 	const host = scratch;
@@ -152,13 +587,18 @@ var block_definitions_default = {
 		{
 			"opcode": "defineFunction",
 			"blockType": "HAT",
-			"text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
-			"description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
-			"descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
+			"text": "define function [NAME] for [SCOPE] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
+			"description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCOPE `this sprite only` (the default for new hats) makes the function callable only from scripts of this sprite or the stage that defines it, and its clones; `all sprites` makes it callable from everywhere, including tools. Hats saved before SCOPE existed are for all sprites. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
+			"descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCOPEを`this sprite only`（新しく置いたハットの既定値）にすると、定義したスプライトまたは背景と、そのクローンのスクリプトからだけ呼べます。`all sprites`にすると、ほかのスプライトや背景、ツールからも呼べます。SCOPEができる前に保存したハットは`all sprites`として扱います。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
 			"arguments": {
 				"NAME": {
 					"type": "STRING",
 					"defaultValue": "add"
+				},
+				"SCOPE": {
+					"type": "STRING",
+					"defaultValue": "sprite",
+					"menu": "functionScopes"
 				},
 				"DESCRIPTION": {
 					"type": "STRING",
@@ -360,8 +800,8 @@ var block_definitions_default = {
 			"opcode": "callFunction",
 			"blockType": "REPORTER",
 			"text": "call function [NAME] with [ARGS]",
-			"description": "Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.",
-			"descriptionJa": "関数を呼び出し、結果を待って返します。ARGSはJSONテキストで、args schemaで検査されます。少なくとも1フレームかかります。",
+			"description": "Calls a function by name and waits for its result. The name is looked up among this sprite's own functions, then the functions for all sprites. ARGS is JSON text and is checked against the args schema. On the TurboWarp Plus runtime a function that does not wait finishes within the call; on stock TurboWarp a call takes at least one frame.",
+			"descriptionJa": "名前で関数を呼び出し、結果を待って返します。名前は、このスプライト自身の関数、すべてのスプライト用の関数の順に探します。ARGSはJSONテキストで、args schemaで検査されます。TurboWarp Plusのランタイムでは待ちのない関数は呼び出しの中で終わり、素のTurboWarpでは少なくとも1フレームかかります。",
 			"arguments": {
 				"NAME": {
 					"type": "STRING",
@@ -370,6 +810,24 @@ var block_definitions_default = {
 				"ARGS": {
 					"type": "STRING",
 					"defaultValue": "{\"a\":1,\"b\":2}"
+				}
+			}
+		},
+		{
+			"opcode": "callFunctionFromMenu",
+			"blockType": "REPORTER",
+			"text": "call [FUNCTION] with [ARGS]",
+			"description": "Calls a function chosen from the functions this sprite can call: its own functions and the functions for all sprites. Otherwise the same as `call function`.",
+			"descriptionJa": "このスプライトが呼べる関数（このスプライト自身の関数と、すべてのスプライト用の関数）から選んで呼び出します。それ以外は`call function`と同じです。",
+			"arguments": {
+				"FUNCTION": {
+					"type": "STRING",
+					"defaultValue": "",
+					"menu": "functionNames"
+				},
+				"ARGS": {
+					"type": "STRING",
+					"defaultValue": "{}"
 				}
 			}
 		},
@@ -427,8 +885,8 @@ var block_definitions_default = {
 			"opcode": "isDefined",
 			"blockType": "BOOLEAN",
 			"text": "function [NAME] defined?",
-			"description": "Reports whether a valid define function hat with this name exists.",
-			"descriptionJa": "この名前の正しいdefine functionハットがあるかを返します。",
+			"description": "Reports whether this sprite can call a function with this name: one of its own functions or a function for all sprites.",
+			"descriptionJa": "このスプライトがこの名前の関数を呼べるか（このスプライト自身の関数、またはすべてのスプライト用の関数があるか）を返します。",
 			"arguments": { "NAME": {
 				"type": "STRING",
 				"defaultValue": "add"
@@ -447,6 +905,20 @@ var block_definitions_default = {
 		"exportModes": {
 			"acceptReporters": false,
 			"items": ["none", "tool"]
+		},
+		"functionScopes": {
+			"acceptReporters": false,
+			"items": [{
+				"text": "all sprites",
+				"value": "global"
+			}, {
+				"text": "this sprite only",
+				"value": "sprite"
+			}]
+		},
+		"functionNames": {
+			"acceptReporters": false,
+			"items": "functionMenu"
 		},
 		"propertyTypes": {
 			"acceptReporters": false,
@@ -486,124 +958,6 @@ var block_definitions_default = {
 		}
 	}
 };
-//#endregion
-//#region src/schema-validator.ts
-/**
-* A small JSON Schema validator for function arguments and returns. It interprets the schema at run time and
-* never generates code, so it also works where `eval` is unavailable (for example Cloudflare Workers).
-*
-* Supported keywords: type, properties, required, additionalProperties (boolean), items, enum,
-* const, minimum, maximum, minLength, maxLength, minItems, maxItems. Other keywords, such as
-* description and title, are ignored.
-*/
-function validateAgainstSchema(value, schema, path = "$") {
-	const rule = asRecord(schema);
-	if (!rule) throw new Error(`${path} must be a JSON Schema object`);
-	assertSchemaNode(rule, path);
-	return validateValue(value, rule, path);
-}
-/** Reject malformed schemas before a function definition or call can use them. */
-function validateSchemaDefinition(schema, label = "schema") {
-	const rule = asRecord(schema);
-	if (!rule) throw new Error(`${label} must be a JSON object`);
-	assertSchemaNode(rule, label);
-}
-function validateValue(value, rule, path) {
-	const errors = [];
-	if (rule.type !== void 0) {
-		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
-		if (!types.some((type) => matchesType(value, type))) return [`${path} must be ${types.join(" or ")}`];
-	}
-	if (Array.isArray(rule.enum) && !rule.enum.some((candidate) => deepEqual(candidate, value))) errors.push(`${path} must be one of ${rule.enum.map((item) => JSON.stringify(item)).join(", ")}`);
-	if ("const" in rule && !deepEqual(rule.const, value)) errors.push(`${path} must be ${JSON.stringify(rule.const)}`);
-	if (typeof value === "number") {
-		if (typeof rule.minimum === "number" && value < rule.minimum) errors.push(`${path} must be >= ${rule.minimum}`);
-		if (typeof rule.maximum === "number" && value > rule.maximum) errors.push(`${path} must be <= ${rule.maximum}`);
-	}
-	if (typeof value === "string") {
-		const length = [...value].length;
-		if (typeof rule.minLength === "number" && length < rule.minLength) errors.push(`${path} must have at least ${rule.minLength} characters`);
-		if (typeof rule.maxLength === "number" && length > rule.maxLength) errors.push(`${path} must have at most ${rule.maxLength} characters`);
-	}
-	if (Array.isArray(value)) {
-		if (typeof rule.minItems === "number" && value.length < rule.minItems) errors.push(`${path} must have at least ${rule.minItems} items`);
-		if (typeof rule.maxItems === "number" && value.length > rule.maxItems) errors.push(`${path} must have at most ${rule.maxItems} items`);
-		if (rule.items !== void 0) value.forEach((item, index) => errors.push(...validateValue(item, rule.items, `${path}[${index}]`)));
-	}
-	const object = asRecord(value);
-	if (object) {
-		const properties = asRecord(rule.properties) ?? {};
-		if (Array.isArray(rule.required)) {
-			for (const name of rule.required) if (typeof name === "string" && !Object.hasOwn(object, name)) errors.push(`${path}.${name} is required`);
-		}
-		for (const [name, child] of Object.entries(object)) if (Object.hasOwn(properties, name)) errors.push(...validateValue(child, properties[name], `${path}.${name}`));
-		else if (rule.additionalProperties === false) errors.push(`${path}.${name} is not allowed`);
-	}
-	return errors;
-}
-function assertSchemaNode(rule, path) {
-	const validTypes = /* @__PURE__ */ new Set([
-		"object",
-		"array",
-		"string",
-		"number",
-		"integer",
-		"boolean",
-		"null"
-	]);
-	if (rule.type !== void 0) {
-		const types = Array.isArray(rule.type) ? rule.type : [rule.type];
-		if (types.length === 0 || types.some((type) => typeof type !== "string" || !validTypes.has(type))) throw new Error(`${path}.type must be a supported JSON Schema type or non-empty type array`);
-	}
-	if (rule.properties !== void 0) {
-		const properties = asRecord(rule.properties);
-		if (!properties) throw new Error(`${path}.properties must be an object`);
-		for (const [name, child] of Object.entries(properties)) {
-			const childRule = asRecord(child);
-			if (!childRule) throw new Error(`${path}.properties.${name} must be a JSON Schema object`);
-			assertSchemaNode(childRule, `${path}.properties.${name}`);
-		}
-	}
-	if (rule.required !== void 0 && (!Array.isArray(rule.required) || rule.required.some((name) => typeof name !== "string"))) throw new Error(`${path}.required must be an array of strings`);
-	if (rule.additionalProperties !== void 0 && typeof rule.additionalProperties !== "boolean") throw new Error(`${path}.additionalProperties must be a boolean`);
-	if (rule.items !== void 0) {
-		const items = asRecord(rule.items);
-		if (!items) throw new Error(`${path}.items must be a JSON Schema object`);
-		assertSchemaNode(items, `${path}.items`);
-	}
-	if (rule.enum !== void 0 && (!Array.isArray(rule.enum) || rule.enum.length === 0)) throw new Error(`${path}.enum must be a non-empty array`);
-	for (const keyword of ["minimum", "maximum"]) if (rule[keyword] !== void 0 && (typeof rule[keyword] !== "number" || !Number.isFinite(rule[keyword]))) throw new Error(`${path}.${keyword} must be a finite number`);
-	for (const keyword of [
-		"minLength",
-		"maxLength",
-		"minItems",
-		"maxItems"
-	]) {
-		const value = rule[keyword];
-		if (value !== void 0 && (typeof value !== "number" || !Number.isInteger(value) || value < 0)) throw new Error(`${path}.${keyword} must be a non-negative integer`);
-	}
-	if (typeof rule.minimum === "number" && typeof rule.maximum === "number" && rule.minimum > rule.maximum) throw new Error(`${path}.minimum cannot exceed maximum`);
-	if (typeof rule.minLength === "number" && typeof rule.maxLength === "number" && rule.minLength > rule.maxLength) throw new Error(`${path}.minLength cannot exceed maxLength`);
-	if (typeof rule.minItems === "number" && typeof rule.maxItems === "number" && rule.minItems > rule.maxItems) throw new Error(`${path}.minItems cannot exceed maxItems`);
-}
-function matchesType(value, type) {
-	switch (type) {
-		case "object": return asRecord(value) !== null;
-		case "array": return Array.isArray(value);
-		case "string": return typeof value === "string";
-		case "number": return typeof value === "number" && Number.isFinite(value);
-		case "integer": return typeof value === "number" && Number.isInteger(value);
-		case "boolean": return typeof value === "boolean";
-		case "null": return value === null;
-		default: return false;
-	}
-}
-function deepEqual(left, right) {
-	return JSON.stringify(left) === JSON.stringify(right);
-}
-function asRecord(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
-}
 function outcomeToPromise(outcome) {
 	if (outcome.state === "fulfilled") return Promise.resolve(outcome.value);
 	if (outcome.state === "rejected") return Promise.reject(outcome.error);
@@ -678,6 +1032,8 @@ var FunctionDispatcher = class {
 		if (bound) return bound.name === name.trim();
 		const invocation = this.starting;
 		if (!invocation || invocation.name !== name.trim()) return false;
+		const script = invocation.script;
+		if (script && (thread.topBlock !== script.blockId || thread.target && thread.target !== script.target)) return false;
 		invocation.thread = thread;
 		this.byThread.set(thread, invocation);
 		this.starting = null;
@@ -741,6 +1097,7 @@ var FunctionDispatcher = class {
 			args: request.args,
 			...request.returnSchema === void 0 ? {} : { returnSchema: request.returnSchema },
 			chain,
+			...request.script ? { script: request.script } : {},
 			promise,
 			resolve,
 			reject,
@@ -834,135 +1191,6 @@ function parseJsonOrText(text) {
 	} catch {
 		return text;
 	}
-}
-//#endregion
-//#region src/block-literals.ts
-function readLiteralInput(block, blocks, inputName) {
-	const input = block.inputs?.[inputName];
-	if (!input) throw new Error(`${inputName} is missing`);
-	if (input.block && input.block !== input.shadow) throw new Error(`${inputName} must be literal text, not a reporter block`);
-	const shadowId = input.shadow ?? input.block;
-	const shadow = shadowId ? blocks[shadowId] : void 0;
-	const field = shadow?.fields ? Object.values(shadow.fields)[0] : void 0;
-	if (!field) throw new Error(`${inputName} is missing`);
-	return String(field.value ?? "");
-}
-function readOptionalLiteralInput(block, blocks, inputName) {
-	if (!block.inputs?.[inputName]) return void 0;
-	return readLiteralInput(block, blocks, inputName);
-}
-/** Reads a dropdown that does not accept reporters; the VM stores it as a field on the block. */
-function readMenuField(block, fieldName) {
-	const field = block.fields?.[fieldName];
-	if (!field) throw new Error(`${fieldName} is missing`);
-	return String(field.value ?? "");
-}
-/**
-* The blocks stacked under `block`, in order. Shadow blocks are skipped, and a `next` chain that
-* loops or leaves the container stops the walk instead of hanging.
-*/
-function stackBelow(block, blocks) {
-	const stack = [];
-	const seen = /* @__PURE__ */ new Set([block.id]);
-	let nextId = block.next ?? null;
-	while (nextId) {
-		if (seen.has(nextId)) break;
-		seen.add(nextId);
-		const next = blocks[nextId];
-		if (!next) break;
-		if (next.shadow !== true) stack.push(next);
-		nextId = next.next ?? null;
-	}
-	return stack;
-}
-//#endregion
-//#region src/function-registry.ts
-var FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
-var MAX_DESCRIPTION_LENGTH = 1024;
-/**
-* Reads every `define function` hat in the project. NAME, DESCRIPTION, and SCHEMA are part of the
-* tool contract sent to the model before any script runs, so they must be literal text.
-*/
-function scanFunctionDefinitions(targets, hatOpcode, options = {}) {
-	const functions = [];
-	const errors = [];
-	const seen = /* @__PURE__ */ new Map();
-	for (const target of targets) {
-		if (target.isOriginal === false) continue;
-		const targetName = target.getName?.() ?? (target.isStage ? "Stage" : "sprite");
-		const blocks = target.blocks._blocks;
-		for (const block of Object.values(blocks)) {
-			if (block.opcode !== hatOpcode || block.topLevel === false) continue;
-			const where = `${targetName} (block ${block.id})`;
-			try {
-				const definition = readDefinition(block, blocks, targetName, options);
-				const previous = seen.get(definition.name);
-				if (previous !== void 0) throw new Error(`function "${definition.name}" is already defined in ${previous}`);
-				seen.set(definition.name, where);
-				functions.push(definition);
-			} catch (error) {
-				errors.push(`${where}: ${error instanceof Error ? error.message : String(error)}`);
-			}
-		}
-	}
-	functions.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-	return {
-		functions,
-		errors
-	};
-}
-function toFunctionTools(functions) {
-	return functions.filter((definition) => definition.exportAs === "tool").map((definition) => ({
-		type: "function",
-		name: definition.name,
-		description: definition.description,
-		parameters: definition.parameters
-	}));
-}
-function readDefinition(block, blocks, targetName, options) {
-	const name = readLiteralInput(block, blocks, "NAME").trim();
-	if (!FUNCTION_NAME_PATTERN.test(name)) throw new Error("function name must be 1-64 letters, digits, \"_\" or \"-\"");
-	const description = readLiteralInput(block, blocks, "DESCRIPTION").trim();
-	if (description.length > 1024) throw new Error(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
-	const parameters = parseSchema(readLiteralInput(block, blocks, "SCHEMA"), "args schema", true, options);
-	const returnsText = readOptionalLiteralInput(block, blocks, "RETURNS");
-	const returns = returnsText === void 0 || returnsText.trim() === "" ? void 0 : parseSchema(returnsText, "returns schema", false, options);
-	const exportAs = String(block.fields?.EXPORT?.value ?? "none") === "tool" ? "tool" : "none";
-	if (exportAs === "tool" && description.length === 0) throw new Error("a function exported as a tool needs a description");
-	return {
-		name,
-		description,
-		parameters,
-		...returns ? { returns } : {},
-		exportAs,
-		targetName,
-		blockId: block.id
-	};
-}
-/**
-* SCHEMA and RETURNS hold either JSON Schema text or, when the consumer supports it, the name of a
-* `define schema` hat. Text that is not JSON is treated as a name, so existing JSON projects are
-* unaffected.
-*/
-function parseSchema(text, label, requireObjectType, options) {
-	let value;
-	try {
-		value = JSON.parse(text);
-	} catch {
-		if (options.resolveSchema) return resolveNamed(text, label, requireObjectType, options.resolveSchema);
-		throw new Error(`${label} must be valid JSON`);
-	}
-	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
-	const schema = value;
-	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
-	validateSchemaDefinition(schema, label);
-	return schema;
-}
-function resolveNamed(text, label, requireObjectType, resolveSchema) {
-	const schema = resolveSchema(text, label);
-	if (requireObjectType && schema.type !== "object") throw new Error("args schema must have \"type\": \"object\"");
-	validateSchemaDefinition(schema, label);
-	return schema;
 }
 //#endregion
 //#region src/schema-builder.ts
@@ -1309,8 +1537,12 @@ var NamedFunctionsImpl = class {
 		if (errors.length > 0) throw new Error(`Invalid function definitions: ${errors.join("; ")}`);
 		return toFunctionTools(this.scan().functions);
 	}
-	isDefined(name) {
-		return this.scan().functions.some((definition) => definition.name === name.trim());
+	isDefined(name, caller) {
+		return resolveFunction(this.scan().functions, name.trim(), caller) !== void 0;
+	}
+	visible(caller) {
+		const functions = visibleFunctions(this.scan().functions, caller);
+		return [...functions.filter((definition) => definition.scope === "sprite"), ...functions.filter((definition) => definition.scope === "global")];
 	}
 	get runsSynchronously() {
 		return this.dispatcher.runsSynchronously;
@@ -1320,21 +1552,23 @@ var NamedFunctionsImpl = class {
 	}
 	callNow(name, args, options = {}) {
 		const trimmed = name.trim();
-		const definition = this.scan().functions.find((candidate) => candidate.name === trimmed);
-		if (!definition) return rejected(`Unknown function: ${trimmed}`);
+		const scan = this.scan();
+		const caller = options.caller?.target;
+		const resolved = resolveFunction(scan.functions, trimmed, caller);
+		if (!resolved) return rejected(unknownFunctionMessage(scan.functions, trimmed, caller));
+		const { definition, runAs } = resolved;
 		if (options.exportedOnly && definition.exportAs !== "tool") return rejected(`Function ${trimmed} is not exported as a tool.`);
 		const errors = validateAgainstSchema(args, definition.parameters);
 		if (errors.length > 0) return rejected(`Invalid arguments for ${trimmed}: ${errors.join("; ")}`);
-		const target = this.options.runtime.targets.find((candidate) => candidate.isOriginal !== false && candidate.blocks._blocks[definition.blockId] !== void 0);
 		return this.dispatcher.invokeNow({
 			name: trimmed,
 			args,
 			caller: options.caller,
 			returnSchema: definition.returns,
-			script: target ? {
-				target,
+			script: {
+				target: runAs,
 				blockId: definition.blockId
-			} : void 0
+			}
 		});
 	}
 	start(name, args, options = {}) {
@@ -1402,6 +1636,12 @@ var NamedFunctionsImpl = class {
 		}
 	}
 };
+/** Names the sprite that owns a function the caller cannot see, so the fix is obvious. */
+function unknownFunctionMessage(functions, name, caller) {
+	const elsewhere = functions.find((definition) => definition.name === name);
+	if (!elsewhere) return `Unknown function: ${name}`;
+	return caller ? `Function ${name} belongs to ${elsewhere.targetName}; make it for all sprites to call it from here.` : `Function ${name} belongs to ${elsewhere.targetName}; only functions for all sprites can be called from outside.`;
+}
 function rejected(message) {
 	return {
 		state: "rejected",
@@ -1430,7 +1670,20 @@ var SCHEMA_BLOCK_OPCODES = {
 var NamedFunctionsExtension = class {
 	constructor(deps) {
 		this.lastErrorMessage = "";
-		this.unregisterFixedInputEditors = registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, fixedInputEditorDefinitions, deps.runtime);
+		this.scopeChecked = /* @__PURE__ */ new WeakSet();
+		this.upgradeScopes = () => {
+			upgradeLegacyScopes(this.runtime.targets, DEFINE_FUNCTION_OPCODE, this.scopeChecked);
+		};
+		this.runtime = deps.runtime;
+		this.unregisterFixedInputEditors = registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, createFixedInputEditorDefinitions((where, name, scope) => {
+			const target = this.runtime.getTargetById?.(where.targetId);
+			return target !== void 0 && hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {
+				target,
+				blockId: where.blockId,
+				name,
+				scope
+			});
+		}), deps.runtime);
 		try {
 			this.functions = createNamedFunctions({
 				...deps,
@@ -1441,8 +1694,13 @@ var NamedFunctionsExtension = class {
 			this.unregisterFixedInputEditors();
 			throw error;
 		}
+		this.upgradeScopes();
+		this.runtime.on("PROJECT_LOADED", this.upgradeScopes);
+		this.runtime.on("PROJECT_CHANGED", this.upgradeScopes);
 	}
 	dispose() {
+		this.runtime.off?.("PROJECT_LOADED", this.upgradeScopes);
+		this.runtime.off?.("PROJECT_CHANGED", this.upgradeScopes);
 		this.unregisterFixedInputEditors();
 	}
 	getInfo() {
@@ -1454,7 +1712,10 @@ var NamedFunctionsExtension = class {
 			blocks: blockDefinitions.map((block) => this.toScratchBlock(block)),
 			menus: Object.fromEntries(Object.entries(menuDefinitions).map(([id, menu]) => [id, {
 				acceptReporters: menu.acceptReporters,
-				items: [...menu.items]
+				items: typeof menu.items === "string" ? menu.items : menu.items.map((item) => typeof item === "string" ? item : {
+					text: Scratch.translate(item.text),
+					value: item.value
+				})
 			}]))
 		};
 	}
@@ -1510,22 +1771,26 @@ var NamedFunctionsExtension = class {
 	* calling script continues in the same step. Otherwise returns a promise and the script waits.
 	*/
 	callFunction(args, util) {
-		const succeed = (result) => {
-			this.lastErrorMessage = "";
-			return toScratchValue(result);
-		};
-		const fail = (error) => {
-			this.lastErrorMessage = messageOf(error);
-			return "";
-		};
+		return this.callByName(args.NAME, args.ARGS, util);
+	}
+	callFunctionFromMenu(args, util) {
+		return this.callByName(args.FUNCTION, args.ARGS, util);
+	}
+	/** Lists the functions the edited sprite can call, for `call [FUNCTION] with [ARGS]`. */
+	functionMenu(targetId) {
+		const target = targetId ? this.runtime.getTargetById?.(targetId) : void 0;
+		let names = [];
 		try {
-			const outcome = this.functions.callNow(Scratch.Cast.toString(args.NAME), parseArguments(Scratch.Cast.toString(args.ARGS)), util?.thread ? { caller: util.thread } : {});
-			if (outcome.state === "fulfilled") return succeed(outcome.value);
-			if (outcome.state === "rejected") return fail(outcome.error);
-			return outcome.promise.then(succeed, fail);
-		} catch (error) {
-			return fail(error);
-		}
+			names = this.functions.visible(target).map((definition) => definition.name);
+		} catch {}
+		if (names.length === 0) return [{
+			text: Scratch.translate("(no functions)"),
+			value: ""
+		}];
+		return names.map((name) => ({
+			text: name,
+			value: name
+		}));
 	}
 	startFunction(args, util) {
 		return this.guard("", () => {
@@ -1556,11 +1821,29 @@ var NamedFunctionsExtension = class {
 	isSettled(args) {
 		return this.functions.isSettled(parseJsonOrText(Scratch.Cast.toString(args.PROMISE)));
 	}
-	isDefined(args) {
-		return this.functions.isDefined(Scratch.Cast.toString(args.NAME));
+	isDefined(args, util) {
+		return this.functions.isDefined(Scratch.Cast.toString(args.NAME), util?.thread?.target);
 	}
 	lastError() {
 		return this.lastErrorMessage;
+	}
+	callByName(nameArg, argsArg, util) {
+		const succeed = (result) => {
+			this.lastErrorMessage = "";
+			return toScratchValue(result);
+		};
+		const fail = (error) => {
+			this.lastErrorMessage = messageOf(error);
+			return "";
+		};
+		try {
+			const outcome = this.functions.callNow(Scratch.Cast.toString(nameArg), parseArguments(Scratch.Cast.toString(argsArg)), util?.thread ? { caller: util.thread } : {});
+			if (outcome.state === "fulfilled") return succeed(outcome.value);
+			if (outcome.state === "rejected") return fail(outcome.error);
+			return outcome.promise.then(succeed, fail);
+		} catch (error) {
+			return fail(error);
+		}
 	}
 	guard(fallback, action) {
 		try {

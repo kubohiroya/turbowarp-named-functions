@@ -31,10 +31,26 @@ export class FakeRuntime implements RuntimeLike {
     this.emit('AFTER_EXECUTE');
   }
 
-  public spawnThread(): RuntimeThread {
-    const thread: RuntimeThread = {topBlock: `thread-${this.threads.length}`};
+  public spawnThread(topBlock = `thread-${this.threads.length}`, target?: RuntimeTarget): RuntimeThread {
+    const thread: RuntimeThread = {topBlock, ...(target ? {target} : {})};
     this.threads.push(thread);
     return thread;
+  }
+
+  /** Starts a thread at a `define function` hat, as the VM does: on the hat, as its sprite. */
+  public spawnHatThread(opcode: string, name: string, target?: RuntimeTarget): RuntimeThread {
+    for (const candidate of target ? [target] : this.targets) {
+      for (const block of Object.values(candidate.blocks._blocks)) {
+        const input = block.inputs?.NAME;
+        const text = input?.shadow ? candidate.blocks._blocks[input.shadow]?.fields?.TEXT?.value : undefined;
+        if (block.opcode === opcode && text === name) return this.spawnThread(block.id, candidate);
+      }
+    }
+    throw new Error(`No define function hat named ${name}`);
+  }
+
+  public getTargetById(id: string): RuntimeTarget | undefined {
+    return this.targets.find((target) => target.id === id);
   }
 
   public endThread(thread: RuntimeThread): void {
@@ -48,6 +64,8 @@ export interface FunctionHatSpec {
   schema?: string;
   returns?: string;
   exportAs?: 'tool' | 'none';
+  /** Omit to model a hat saved before SCOPE existed. */
+  scope?: 'sprite' | 'global';
   /** Use a reporter block instead of literal text for this input. */
   reporterInput?: 'NAME' | 'DESCRIPTION' | 'SCHEMA' | 'RETURNS';
 }
@@ -84,10 +102,13 @@ export function targetWithFunctions(
       opcode,
       topLevel: true,
       inputs,
-      fields: {EXPORT: {value: spec.exportAs ?? 'tool'}}
+      fields: {
+        EXPORT: {value: spec.exportAs ?? 'tool'},
+        ...(spec.scope ? {SCOPE: {value: spec.scope}} : {})
+      }
     };
   });
-  return {isOriginal: true, isStage: false, getName: () => name, blocks: {_blocks: blocks}};
+  return {id: name, isOriginal: true, isStage: false, sprite: {name}, getName: () => name, blocks: {_blocks: blocks}};
 }
 
 /** Opcodes used by the schema-builder tests; shaped like a consumer extension's own opcodes. */

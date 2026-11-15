@@ -19,7 +19,8 @@ JSONの引数を受け取りJSONの結果を返す「名前を持つ関数」を
 
 ## できること
 
-- `define function`ハットで関数を定義する（名前、説明、引数のJSON Schema）
+- `define function`ハットで関数を定義する（名前、範囲〔このスプライトのみ／すべてのスプライト〕、説明、引数のJSON Schema）
+- 関数を名前で呼び出す、またはそのスプライトが呼べる関数の選択肢から選んで呼び出す
 - 名前で呼び出して結果を待つ（`call function`）、または開始してあとで待つ（`start function`、`await`、`await all`）
 - 関数を実行する前に、引数をスキーマで検査する（コード生成を使わない）
 - TurboWarp Plusのランタイムでは、呼び出したブロックの中で関数を実行し、関数が自分自身を呼ぶ（再帰する）こともできる。素のTurboWarpでは、再帰を待ち続けずにエラーにする
@@ -65,15 +66,16 @@ say (call function [add] with [{"a":1,"b":2}])
 
 <!-- BEGIN GENERATED BLOCKS -->
 
-### `define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
+### `define function [NAME] for [SCOPE] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]`
 
-名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。
+名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCOPEを`this sprite only`（新しく置いたハットの既定値）にすると、定義したスプライトまたは背景と、そのクローンのスクリプトからだけ呼べます。`all sprites`にすると、ほかのスプライトや背景、ツールからも呼べます。SCOPEができる前に保存したハットは`all sprites`として扱います。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。
 
 | 項目 | 値 |
 |---|---|
 | 種類 | ハット |
 | Opcode | `defineFunction` |
 | `NAME` | 文字列, 既定値: `add` |
+| `SCOPE` | 文字列, 既定値: `sprite`, 選択肢: `global` (all sprites), `sprite` (this sprite only) |
 | `DESCRIPTION` | 文字列, 既定値: `Adds two numbers.` |
 | `SCHEMA` | 文字列, 既定値: `{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}` |
 | `RETURNS` | 文字列, 既定値: `` |
@@ -208,7 +210,7 @@ say (call function [add] with [{"a":1,"b":2}])
 
 ### `call function [NAME] with [ARGS]`
 
-関数を呼び出し、結果を待って返します。ARGSはJSONテキストで、args schemaで検査されます。少なくとも1フレームかかります。
+名前で関数を呼び出し、結果を待って返します。名前は、このスプライト自身の関数、すべてのスプライト用の関数の順に探します。ARGSはJSONテキストで、args schemaで検査されます。TurboWarp Plusのランタイムでは待ちのない関数は呼び出しの中で終わり、素のTurboWarpでは少なくとも1フレームかかります。
 
 | 項目 | 値 |
 |---|---|
@@ -216,6 +218,17 @@ say (call function [add] with [{"a":1,"b":2}])
 | Opcode | `callFunction` |
 | `NAME` | 文字列, 既定値: `add` |
 | `ARGS` | 文字列, 既定値: `{"a":1,"b":2}` |
+
+### `call [FUNCTION] with [ARGS]`
+
+このスプライトが呼べる関数（このスプライト自身の関数と、すべてのスプライト用の関数）から選んで呼び出します。それ以外は`call function`と同じです。
+
+| 項目 | 値 |
+|---|---|
+| 種類 | 値ブロック |
+| Opcode | `callFunctionFromMenu` |
+| `FUNCTION` | 文字列, 既定値: ``, 選択肢: このスプライトが呼べる関数 |
+| `ARGS` | 文字列, 既定値: `{}` |
 
 ### `start function [NAME] with [ARGS]`
 
@@ -260,7 +273,7 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 
 ### `function [NAME] defined?`
 
-この名前の正しいdefine functionハットがあるかを返します。
+このスプライトがこの名前の関数を呼べるか（このスプライト自身の関数、またはすべてのスプライト用の関数があるか）を返します。
 
 | 項目 | 値 |
 |---|---|
@@ -283,6 +296,10 @@ Promiseへの参照のJSON配列をすべて待ち、結果のJSON配列を返�
 
 | 状況 | 動作 |
 |---|---|
+| 範囲 | 新しく置いた`define function`ハットは「このスプライトのみ」で、定義したスプライト（または背景）とそのクローンのスクリプトから呼べる。「すべてのスプライト」にすると、どこからでも、ツールからも呼べる。範囲ができる前に保存したハットは「すべてのスプライト」として扱う |
+| 関数の名前 | すべてのスプライト用の名前はプロジェクト内で重複できない。スプライト用の名前はそのスプライト内で重複できず、すべてのスプライト用の名前とも重複できない。別々のスプライトが同じ名前の関数をそれぞれ持つことはできる |
+| どのスプライトとして動くか | スプライト自身の関数は呼び出したスプライトとして動く（クローンが呼べばそのクローンとして動く）。すべてのスプライト用の関数は、定義したスプライトまたは背景として動く |
+| 別のスプライトの関数を呼んだ | `Function f belongs to Cat; make it for all sprites to call it from here.`というエラーで失敗する |
 | 呼び出しの開始（TurboWarp Plusのランタイム） | 関数のスクリプトを直接起動し、呼び出したブロックの中で実行する |
 | 呼び出しの開始（素のTurboWarp） | すべての`define function`ハットが起動され、NAMEが一致したものだけが実行を続ける |
 | かかる時間（TurboWarp Plusのランタイム） | 待ちのない関数は、画面を再描画せずに実行する独自ブロックと同じく、呼び出しの中で終わる。待ちのある関数や、128段より深い入れ子の呼び出しは、後のフレームで結果が出る |

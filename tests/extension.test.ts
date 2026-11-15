@@ -25,7 +25,7 @@ function setup() {
   ];
   const extension = new NamedFunctionsExtension({runtime});
   const run = () => {
-    const thread = runtime.spawnThread();
+    const thread = runtime.spawnHatThread(DEFINE_FUNCTION_OPCODE, 'add');
     expect(extension.defineFunction({NAME: 'add'}, {thread})).toBe(true);
     return thread;
   };
@@ -165,7 +165,7 @@ describe('NamedFunctionsExtension schema blocks', () => {
     expect(runtime.startedHats).toEqual([]);
 
     const result = extension.callFunction({NAME: 'scored', ARGS: '{"points":7}'});
-    const thread = runtime.spawnThread();
+    const thread = runtime.spawnHatThread(DEFINE_FUNCTION_OPCODE, 'scored');
     expect(extension.defineFunction({NAME: 'scored'}, {thread})).toBe(true);
     extension.returnValue({VALUE: '7'}, {thread});
     await expect(result).resolves.toBe(7);

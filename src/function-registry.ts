@@ -13,14 +13,24 @@ export interface FunctionTool {
 export const FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
 export const MAX_DESCRIPTION_LENGTH = 1024;
 
+/**
+ * `sprite`: callable only from scripts of the sprite (or the stage) that defines it, and its clones.
+ * `global`: callable from every sprite and the stage, and from outside the project (tools).
+ */
+export type FunctionScope = 'sprite' | 'global';
+
 export interface FunctionDefinition {
   name: string;
+  /** Hats saved before scopes existed have no SCOPE field and stay `global`. */
+  scope: FunctionScope;
   description: string;
   parameters: Record<string, unknown>;
   /** Omitted on older projects and when RETURNS is left blank. */
   returns?: Record<string, unknown>;
   exportAs: 'tool' | 'none';
   targetName: string;
+  /** The sprite (never a clone) or the stage that defines the function. */
+  target: RuntimeTarget;
   blockId: string;
 }
 
@@ -46,9 +56,8 @@ export function scanFunctionDefinitions(
   hatOpcode: string,
   options: FunctionScanOptions = {}
 ): FunctionScan {
-  const functions: FunctionDefinition[] = [];
+  const scanned: Array<{definition: FunctionDefinition; where: string}> = [];
   const errors: string[] = [];
-  const seen = new Map<string, string>();
 
   for (const target of targets) {
     if (target.isOriginal === false) continue;
@@ -58,20 +67,144 @@ export function scanFunctionDefinitions(
       if (block.opcode !== hatOpcode || block.topLevel === false) continue;
       const where = `${targetName} (block ${block.id})`;
       try {
-        const definition = readDefinition(block, blocks, targetName, options);
-        const previous = seen.get(definition.name);
-        if (previous !== undefined) {
-          throw new Error(`function "${definition.name}" is already defined in ${previous}`);
-        }
-        seen.set(definition.name, where);
-        functions.push(definition);
+        scanned.push({definition: readDefinition(block, blocks, targetName, target, options), where});
       } catch (error) {
         errors.push(`${where}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
+
+  // A name is unique among the global functions, unique within each sprite, and a sprite's own
+  // function may not reuse a global name, so a call by name never depends on which sprite makes it.
+  const functions: FunctionDefinition[] = [];
+  const globals = new Map<string, string>();
+  for (const {definition, where} of scanned) {
+    if (definition.scope !== 'global') continue;
+    const previous = globals.get(definition.name);
+    if (previous !== undefined) {
+      errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+      continue;
+    }
+    globals.set(definition.name, where);
+    functions.push(definition);
+  }
+  const locals = new Map<RuntimeTarget, Map<string, string>>();
+  for (const {definition, where} of scanned) {
+    if (definition.scope !== 'sprite') continue;
+    const global = globals.get(definition.name);
+    if (global !== undefined) {
+      errors.push(`${where}: function "${definition.name}" is already defined for all sprites in ${global}`);
+      continue;
+    }
+    const own = locals.get(definition.target) ?? new Map<string, string>();
+    locals.set(definition.target, own);
+    const previous = own.get(definition.name);
+    if (previous !== undefined) {
+      errors.push(`${where}: function "${definition.name}" is already defined in ${previous}`);
+      continue;
+    }
+    own.set(definition.name, where);
+    functions.push(definition);
+  }
   functions.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   return {functions, errors};
+}
+
+/**
+ * Writes `SCOPE = global` into `define function` hats saved before SCOPE existed, so the stored
+ * value matches what the block shows (the menu's first choice) and a change made on the block is
+ * kept: the VM ignores a change to a field the block does not have. Each sprite is checked once;
+ * pass the same `checked` set every time.
+ */
+export function upgradeLegacyScopes(
+  targets: readonly RuntimeTarget[],
+  hatOpcode: string,
+  checked: WeakSet<RuntimeTarget>
+): number {
+  let upgraded = 0;
+  for (const target of targets) {
+    if (target.isOriginal === false || checked.has(target)) continue;
+    checked.add(target);
+    for (const block of Object.values(target.blocks._blocks)) {
+      if (block.opcode !== hatOpcode || block.topLevel === false || block.fields?.SCOPE) continue;
+      block.fields = {...block.fields, SCOPE: {name: 'SCOPE', value: 'global'}};
+      upgraded += 1;
+    }
+  }
+  return upgraded;
+}
+
+/**
+ * Whether naming the hat `blockId` of `target` as `name` with `scope` would clash with another
+ * `define function` hat, under the same rules as `scanFunctionDefinitions`: a global name is unique
+ * in the project, and a sprite name is unique in its sprite and differs from every global name.
+ * Hats whose NAME is not literal text are not compared.
+ */
+export function hasNameConflict(
+  targets: readonly RuntimeTarget[],
+  hatOpcode: string,
+  candidate: {target: RuntimeTarget; blockId: string; name: string; scope: FunctionScope}
+): boolean {
+  const name = candidate.name.trim();
+  for (const target of targets) {
+    if (target.isOriginal === false) continue;
+    const blocks = target.blocks._blocks;
+    for (const block of Object.values(blocks)) {
+      if (block.opcode !== hatOpcode || block.topLevel === false || block.id === candidate.blockId) continue;
+      let other: string;
+      let otherScope: FunctionScope;
+      try {
+        other = readLiteralInput(block, blocks, 'NAME').trim();
+        otherScope = readScope(block);
+      } catch {
+        continue;
+      }
+      if (other !== name) continue;
+      if (candidate.scope === 'global' || otherScope === 'global' || sameSprite(target, candidate.target)) return true;
+    }
+  }
+  return false;
+}
+
+/** A function a script can call, and the sprite, clone, or stage it runs as. */
+export interface ResolvedFunction {
+  definition: FunctionDefinition;
+  runAs: RuntimeTarget;
+}
+
+/** True when both are the same sprite: the original, one of its clones, or the stage itself. */
+export function sameSprite(left: RuntimeTarget, right: RuntimeTarget): boolean {
+  return left === right || (left.sprite !== undefined && left.sprite === right.sprite);
+}
+
+/**
+ * Finds the function a call names. A caller's own sprite function runs as the caller (a clone runs it
+ * as itself, as with a custom block); a global function runs as the sprite or stage that defines it.
+ * Without a caller (a call from outside the project), only global functions are visible.
+ */
+export function resolveFunction(
+  functions: readonly FunctionDefinition[],
+  name: string,
+  caller?: RuntimeTarget
+): ResolvedFunction | undefined {
+  if (caller) {
+    const own = functions.find(
+      (definition) => definition.scope === 'sprite' && definition.name === name && sameSprite(definition.target, caller)
+    );
+    if (own) return {definition: own, runAs: caller};
+  }
+  const global = functions.find((definition) => definition.scope === 'global' && definition.name === name);
+  return global ? {definition: global, runAs: global.target} : undefined;
+}
+
+/** Functions a script of `caller` can call: its sprite's own functions, then the global ones. */
+export function visibleFunctions(
+  functions: readonly FunctionDefinition[],
+  caller?: RuntimeTarget
+): FunctionDefinition[] {
+  return functions.filter(
+    (definition) => definition.scope === 'global' || (caller !== undefined && sameSprite(definition.target, caller))
+  );
 }
 
 export function toFunctionTools(functions: readonly FunctionDefinition[]): FunctionTool[] {
@@ -89,6 +222,7 @@ function readDefinition(
   block: SerializedBlock,
   blocks: Record<string, SerializedBlock>,
   targetName: string,
+  target: RuntimeTarget,
   options: FunctionScanOptions
 ): FunctionDefinition {
   const name = readLiteralInput(block, blocks, 'NAME').trim();
@@ -109,7 +243,29 @@ function readDefinition(
   if (exportAs === 'tool' && description.length === 0) {
     throw new Error('a function exported as a tool needs a description');
   }
-  return {name, description, parameters, ...(returns ? {returns} : {}), exportAs, targetName, blockId: block.id};
+  const scope = readScope(block);
+  if (exportAs === 'tool' && scope !== 'global') {
+    throw new Error('a function exported as a tool must be for all sprites');
+  }
+  return {
+    name,
+    scope,
+    description,
+    parameters,
+    ...(returns ? {returns} : {}),
+    exportAs,
+    targetName,
+    target,
+    blockId: block.id
+  };
+}
+
+/** SCOPE is a menu field. Hats saved before it existed have none and keep their global meaning. */
+function readScope(block: SerializedBlock): FunctionScope {
+  const value = block.fields?.SCOPE?.value;
+  if (value === undefined || value === null || value === 'global') return 'global';
+  if (value === 'sprite') return 'sprite';
+  throw new Error(`unknown function scope "${String(value)}"`);
 }
 
 /**

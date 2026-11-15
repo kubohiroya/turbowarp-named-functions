@@ -57,6 +57,7 @@ interface Invocation {
   args: unknown;
   returnSchema?: unknown;
   chain: readonly string[];
+  script?: FunctionScript;
   promise: Promise<unknown>;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
@@ -160,6 +161,11 @@ export class FunctionDispatcher {
     if (bound) return bound.name === name.trim();
     const invocation = this.starting;
     if (!invocation || invocation.name !== name.trim()) return false;
+    // Several sprites may each have their own function of this name; only the resolved one runs.
+    const script = invocation.script;
+    if (script && (thread.topBlock !== script.blockId || (thread.target && thread.target !== script.target))) {
+      return false;
+    }
     invocation.thread = thread;
     this.byThread.set(thread, invocation);
     this.starting = null;
@@ -229,6 +235,7 @@ export class FunctionDispatcher {
       args: request.args,
       ...(request.returnSchema === undefined ? {} : {returnSchema: request.returnSchema}),
       chain,
+      ...(request.script ? {script: request.script} : {}),
       promise,
       resolve,
       reject,

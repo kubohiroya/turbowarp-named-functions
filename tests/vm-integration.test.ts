@@ -87,6 +87,18 @@ function buildProject() {
   add('sumAdd', {opcode: 'operator_add', parent: 'sumStep', inputs: {NUM1: [3, 'sumArgSelf', [4, '']], NUM2: [3, 'sumCall', [4, '']]}});
   add('sumStep', {opcode: `${ID}_returnValue`, parent: 'sumIf', inputs: {VALUE: [3, 'sumAdd', [10, '']]}});
 
+  // secret: for this sprite only; return 7. viaSprite: for all sprites; return (call function [secret])
+  define('secretFn', 'secret', '{"type":"object"}', 'secretReturn');
+  (blocks.secretFn!.fields as Record<string, unknown>).SCOPE = ['sprite', null];
+  add('secretReturn', {opcode: `${ID}_returnValue`, parent: 'secretFn', inputs: {VALUE: [1, [10, '7']]}});
+  define('viaSpriteFn', 'viaSprite', '{"type":"object"}', 'viaSpriteReturn');
+  add('viaSpriteCall', {
+    opcode: `${ID}_callFunction`,
+    parent: 'viaSpriteReturn',
+    inputs: {NAME: [1, [10, 'secret']], ARGS: [1, [10, '{}']]}
+  });
+  add('viaSpriteReturn', {opcode: `${ID}_returnValue`, parent: 'viaSpriteFn', inputs: {VALUE: [3, 'viaSpriteCall', [10, '']]}});
+
   // badReturn: return text against a numeric return schema
   define('badReturnFn', 'badReturn', '{"type":"object"}', 'badReturn');
   blocks.badReturnFn!.inputs = {...(blocks.badReturnFn!.inputs as Record<string, unknown>), RETURNS: [1, [10, '{"type":"number"}']]};
@@ -228,6 +240,12 @@ describe.skipIf(!vmPath).each(modes)('named functions on a real TurboWarp VM (%s
     const result = await call({NAME: 'loop', ARGS: '{}'});
     expect(result).toContain('Reentrant call: loop -> loop');
     expect(result).toContain('Recursion needs the TurboWarp Plus runtime');
+  });
+
+  it('calls a sprite function only from that sprite', async () => {
+    await expect(call({NAME: 'viaSprite', ARGS: '{}'})).resolves.toBe(7);
+    await expect(call({NAME: 'secret', ARGS: '{}'})).resolves.toBe('');
+    expect(extension.lastError()).toContain('Function secret belongs to S');
   });
 
   it('rejects a return value that does not match its return schema', async () => {

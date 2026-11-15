@@ -4,13 +4,18 @@
     {
       "opcode": "defineFunction",
       "blockType": "HAT",
-      "text": "define function [NAME] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
-      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
-      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
+      "text": "define function [NAME] for [SCOPE] description [DESCRIPTION] args schema [SCHEMA] returns schema [RETURNS] export as [EXPORT]",
+      "description": "Defines a named function. NAME, DESCRIPTION, and SCHEMA must be literal text. SCOPE `this sprite only` (the default for new hats) makes the function callable only from scripts of this sprite or the stage that defines it, and its clones; `all sprites` makes it callable from everywhere, including tools. Hats saved before SCOPE existed are for all sprites. SCHEMA and RETURNS each take JSON Schema text or the name of a `define schema` hat, optionally pinned as Name@1.0.0. RETURNS is optional; leave it blank to disable return validation.",
+      "descriptionJa": "名前を持つ関数を定義します。NAME、DESCRIPTION、SCHEMAには文字列を直接書く必要があります。SCOPEを`this sprite only`（新しく置いたハットの既定値）にすると、定義したスプライトまたは背景と、そのクローンのスクリプトからだけ呼べます。`all sprites`にすると、ほかのスプライトや背景、ツールからも呼べます。SCOPEができる前に保存したハットは`all sprites`として扱います。SCHEMAとRETURNSには、JSON Schema文字列、または`define schema`ハットの名前（Name@1.0.0の形でバージョン固定も可）を書けます。RETURNSは任意で、空欄なら戻り値を検証しません。",
       "arguments": {
         "NAME": {
           "type": "STRING",
           "defaultValue": "add"
+        },
+        "SCOPE": {
+          "type": "STRING",
+          "defaultValue": "sprite",
+          "menu": "functionScopes"
         },
         "DESCRIPTION": {
           "type": "STRING",
@@ -224,8 +229,8 @@
       "opcode": "callFunction",
       "blockType": "REPORTER",
       "text": "call function [NAME] with [ARGS]",
-      "description": "Calls a function and waits for its result. ARGS is JSON text and is checked against the args schema. Takes at least one frame.",
-      "descriptionJa": "関数を呼び出し、結果を待って返します。ARGSはJSONテキストで、args schemaで検査されます。少なくとも1フレームかかります。",
+      "description": "Calls a function by name and waits for its result. The name is looked up among this sprite's own functions, then the functions for all sprites. ARGS is JSON text and is checked against the args schema. On the TurboWarp Plus runtime a function that does not wait finishes within the call; on stock TurboWarp a call takes at least one frame.",
+      "descriptionJa": "名前で関数を呼び出し、結果を待って返します。名前は、このスプライト自身の関数、すべてのスプライト用の関数の順に探します。ARGSはJSONテキストで、args schemaで検査されます。TurboWarp Plusのランタイムでは待ちのない関数は呼び出しの中で終わり、素のTurboWarpでは少なくとも1フレームかかります。",
       "arguments": {
         "NAME": {
           "type": "STRING",
@@ -234,6 +239,24 @@
         "ARGS": {
           "type": "STRING",
           "defaultValue": "{\"a\":1,\"b\":2}"
+        }
+      }
+    },
+    {
+      "opcode": "callFunctionFromMenu",
+      "blockType": "REPORTER",
+      "text": "call [FUNCTION] with [ARGS]",
+      "description": "Calls a function chosen from the functions this sprite can call: its own functions and the functions for all sprites. Otherwise the same as `call function`.",
+      "descriptionJa": "このスプライトが呼べる関数（このスプライト自身の関数と、すべてのスプライト用の関数）から選んで呼び出します。それ以外は`call function`と同じです。",
+      "arguments": {
+        "FUNCTION": {
+          "type": "STRING",
+          "defaultValue": "",
+          "menu": "functionNames"
+        },
+        "ARGS": {
+          "type": "STRING",
+          "defaultValue": "{}"
         }
       }
     },
@@ -297,8 +320,8 @@
       "opcode": "isDefined",
       "blockType": "BOOLEAN",
       "text": "function [NAME] defined?",
-      "description": "Reports whether a valid define function hat with this name exists.",
-      "descriptionJa": "この名前の正しいdefine functionハットがあるかを返します。",
+      "description": "Reports whether this sprite can call a function with this name: one of its own functions or a function for all sprites.",
+      "descriptionJa": "このスプライトがこの名前の関数を呼べるか（このスプライト自身の関数、またはすべてのスプライト用の関数があるか）を返します。",
       "arguments": {
         "NAME": {
           "type": "STRING",
@@ -322,6 +345,23 @@
         "none",
         "tool"
       ]
+    },
+    "functionScopes": {
+      "acceptReporters": false,
+      "items": [
+        {
+          "text": "all sprites",
+          "value": "global"
+        },
+        {
+          "text": "this sprite only",
+          "value": "sprite"
+        }
+      ]
+    },
+    "functionNames": {
+      "acceptReporters": false,
+      "items": "functionMenu"
     },
     "propertyTypes": {
       "acceptReporters": false,
