@@ -1674,16 +1674,17 @@ var NamedFunctionsExtension = class {
 		this.upgradeScopes = () => {
 			upgradeLegacyScopes(this.runtime.targets, DEFINE_FUNCTION_OPCODE, this.scopeChecked);
 		};
+		this.fixedInputEditorsReleased = false;
+		this.releaseFixedInputEditors = () => {
+			this.fixedInputEditorsReleased = true;
+		};
+		this.restoreFixedInputEditors = () => {
+			if (!this.fixedInputEditorsReleased) return;
+			this.fixedInputEditorsReleased = false;
+			this.unregisterFixedInputEditors = this.registerEditors();
+		};
 		this.runtime = deps.runtime;
-		this.unregisterFixedInputEditors = registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, createFixedInputEditorDefinitions((where, name, scope) => {
-			const target = this.runtime.getTargetById?.(where.targetId);
-			return target !== void 0 && hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {
-				target,
-				blockId: where.blockId,
-				name,
-				scope
-			});
-		}), deps.runtime);
+		this.unregisterFixedInputEditors = this.registerEditors();
 		try {
 			this.functions = createNamedFunctions({
 				...deps,
@@ -1697,10 +1698,15 @@ var NamedFunctionsExtension = class {
 		this.upgradeScopes();
 		this.runtime.on("PROJECT_LOADED", this.upgradeScopes);
 		this.runtime.on("PROJECT_CHANGED", this.upgradeScopes);
+		this.runtime.on("RUNTIME_DISPOSED", this.releaseFixedInputEditors);
+		this.runtime.on("PROJECT_LOADED", this.restoreFixedInputEditors);
 	}
 	dispose() {
 		this.runtime.off?.("PROJECT_LOADED", this.upgradeScopes);
 		this.runtime.off?.("PROJECT_CHANGED", this.upgradeScopes);
+		this.runtime.off?.("RUNTIME_DISPOSED", this.releaseFixedInputEditors);
+		this.runtime.off?.("PROJECT_LOADED", this.restoreFixedInputEditors);
+		this.fixedInputEditorsReleased = false;
 		this.unregisterFixedInputEditors();
 	}
 	getInfo() {
@@ -1826,6 +1832,17 @@ var NamedFunctionsExtension = class {
 	}
 	lastError() {
 		return this.lastErrorMessage;
+	}
+	registerEditors() {
+		return registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, createFixedInputEditorDefinitions((where, name, scope) => {
+			const target = this.runtime.getTargetById?.(where.targetId);
+			return target !== void 0 && hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {
+				target,
+				blockId: where.blockId,
+				name,
+				scope
+			});
+		}), this.runtime);
 	}
 	callByName(nameArg, argsArg, util) {
 		const succeed = (result) => {
