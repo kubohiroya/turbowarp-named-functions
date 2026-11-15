@@ -1,5 +1,6 @@
 import {createFixedInputEditorDefinitions, registerFixedInputEditors} from './fixed-input-editors.js';
 import {hasNameConflict} from './function-registry.js';
+import {jsonInputEditorDefinitions, registerJsonInputEditors} from './json-input-editors.js';
 import {extensionConfig} from './config';
 import definitions from './block-definitions.json';
 import {
@@ -281,16 +282,34 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
 
   // ---- internals ----------------------------------------------------------------------------
 
+  /** Registers every data editor; the returned function removes them all. */
   private registerEditors(): () => void {
-    return registerFixedInputEditors(
-      typeof Scratch === 'undefined' ? {} : Scratch,
-      createFixedInputEditorDefinitions((where, name, scope) => {
-        const target = this.runtime.getTargetById?.(where.targetId);
-        return target !== undefined &&
-          hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
-      }),
-      this.runtime
-    );
+    const scratch = typeof Scratch === 'undefined' ? {} : Scratch;
+    const removers: (() => void)[] = [];
+    const unregister = () => {
+      for (const remove of removers.splice(0).reverse()) remove();
+    };
+    try {
+      removers.push(registerFixedInputEditors(
+        scratch,
+        createFixedInputEditorDefinitions((where, name, scope) => {
+          const target = this.runtime.getTargetById?.(where.targetId);
+          return target !== undefined &&
+            hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
+        }),
+        this.runtime
+      ));
+      // Called only while a dialog is open, after the constructor has created the functions.
+      removers.push(registerJsonInputEditors(
+        scratch,
+        jsonInputEditorDefinitions((targetId) => this.functions.visible(this.runtime.getTargetById?.(targetId))),
+        this.runtime
+      ));
+    } catch (error) {
+      unregister();
+      throw error;
+    }
+    return unregister;
   }
 
   private callByName(

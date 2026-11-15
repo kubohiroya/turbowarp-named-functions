@@ -581,6 +581,146 @@ function registerFixedInputEditors(scratch, definitions, runtimeOverride) {
 	}
 	return dispose;
 }
+//#endregion
+//#region src/json-input-editors.ts
+/**
+* JSON editors for the inputs that hold JSON text, opened from the block's editor icon.
+*
+* `define function` is not here: the editor registry allows one editor per opcode, and that block
+* already has the fixed-input editor for EXPORT.
+*/
+var PROMISE_REF_SCHEMA = {
+	type: "object",
+	properties: { $promise: {
+		type: "string",
+		pattern: "^p_[0-9]+$"
+	} },
+	required: ["$promise"],
+	additionalProperties: false
+};
+var SCHEMAS = {
+	args: { type: "object" },
+	promise: PROMISE_REF_SCHEMA,
+	promises: {
+		type: "array",
+		items: PROMISE_REF_SCHEMA
+	}
+};
+function bundle(key) {
+	const source = {
+		repository: "turbowarp-named-functions",
+		path: "src/json-input-editors.ts",
+		symbol: `SCHEMAS.${key}`
+	};
+	return {
+		identity: {
+			ownerId: "turbowarp-named-functions",
+			contractId: `json-input.${key}`,
+			revision: "json-inputs-v1",
+			variantId: "default"
+		},
+		dialect: "2020-12",
+		root: {
+			retrievalUri: `https://kubohiroya.github.io/turbowarp-named-functions/schemas/json-input-${key}.schema.json`,
+			document: SCHEMAS[key],
+			artifact: {
+				role: "canonical-schema",
+				source
+			}
+		},
+		resources: [],
+		provenance: {
+			canonicalSources: [source],
+			generatedFiles: [],
+			referenceSchemas: [],
+			generationSources: []
+		}
+	};
+}
+/** Checks call arguments against the schema of the function named by the block's NAME (or FUNCTION) literal. */
+function validateCallArguments(data, snapshot, functions) {
+	const input = snapshot.arguments.FUNCTION ? "FUNCTION" : "NAME";
+	const slot = snapshot.arguments[input];
+	if (!slot || slot.kind !== "literal") return [];
+	const name = String(slot.value).trim();
+	const definition = functions(snapshot.targetId).find((candidate) => candidate.name === name);
+	if (!definition) return [{
+		path: `/inputs/${input}`,
+		message: `Unknown function: ${name}`
+	}];
+	return validateAgainstSchema(data, definition.parameters).map((message) => ({
+		path: "/inputs/ARGS",
+		message
+	}));
+}
+function jsonInputEditorDefinitions(functions) {
+	const common = {
+		apiVersion: 1,
+		extensionId: extensionConfig.id,
+		format: "json",
+		validationContext: () => ({
+			consumerId: extensionConfig.id,
+			nowMs: Date.now(),
+			settings: null
+		})
+	};
+	const id = (opcode) => `${extensionConfig.id}_${opcode}`;
+	return [
+		{
+			...common,
+			editorId: "call-arguments",
+			opcodes: [
+				id("callFunction"),
+				id("callFunctionFromMenu"),
+				id("startFunction")
+			],
+			argument: "ARGS",
+			schemaBundle: bundle("args"),
+			validateData: (data, snapshot) => validateCallArguments(data, snapshot, functions)
+		},
+		{
+			...common,
+			editorId: "promise-reference",
+			opcodes: [id("awaitResult"), id("isSettled")],
+			argument: "PROMISE",
+			schemaBundle: bundle("promise")
+		},
+		{
+			...common,
+			editorId: "promise-references",
+			opcodes: [id("awaitAll")],
+			argument: "PROMISES",
+			schemaBundle: bundle("promises")
+		}
+	];
+}
+/** Registers the editors when the GUI offers schema bundle editors; otherwise does nothing. */
+function registerJsonInputEditors(scratch, definitions, runtimeOverride) {
+	const host = scratch;
+	const api = host.gui?.blockEditors;
+	if (!definitions.length || api?.apiVersion !== 1 || typeof api.registerSchemaBundle !== "function") return () => {};
+	const runtime = runtimeOverride ?? host.vm?.runtime;
+	const removers = [];
+	let active = true;
+	const dispose = () => {
+		if (!active) return;
+		active = false;
+		runtime?.off?.("RUNTIME_DISPOSED", dispose);
+		for (const remove of removers.splice(0).reverse()) remove();
+	};
+	try {
+		for (const definition of definitions) {
+			const remove = api.registerSchemaBundle.call(api, definition);
+			if (typeof remove !== "function") throw new TypeError("Invalid JSON input editor registration disposer.");
+			removers.push(remove);
+		}
+		runtime?.on?.("RUNTIME_DISPOSED", dispose);
+	} catch (error) {
+		dispose();
+		throw error;
+	}
+	return dispose;
+}
 var block_definitions_default = {
 	extensionName: "Named Functions",
 	blocks: [
@@ -1833,16 +1973,29 @@ var NamedFunctionsExtension = class {
 	lastError() {
 		return this.lastErrorMessage;
 	}
+	/** Registers every data editor; the returned function removes them all. */
 	registerEditors() {
-		return registerFixedInputEditors(typeof Scratch === "undefined" ? {} : Scratch, createFixedInputEditorDefinitions((where, name, scope) => {
-			const target = this.runtime.getTargetById?.(where.targetId);
-			return target !== void 0 && hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {
-				target,
-				blockId: where.blockId,
-				name,
-				scope
-			});
-		}), this.runtime);
+		const scratch = typeof Scratch === "undefined" ? {} : Scratch;
+		const removers = [];
+		const unregister = () => {
+			for (const remove of removers.splice(0).reverse()) remove();
+		};
+		try {
+			removers.push(registerFixedInputEditors(scratch, createFixedInputEditorDefinitions((where, name, scope) => {
+				const target = this.runtime.getTargetById?.(where.targetId);
+				return target !== void 0 && hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {
+					target,
+					blockId: where.blockId,
+					name,
+					scope
+				});
+			}), this.runtime));
+			removers.push(registerJsonInputEditors(scratch, jsonInputEditorDefinitions((targetId) => this.functions.visible(this.runtime.getTargetById?.(targetId))), this.runtime));
+		} catch (error) {
+			unregister();
+			throw error;
+		}
+		return unregister;
 	}
 	callByName(nameArg, argsArg, util) {
 		const succeed = (result) => {
