@@ -5,7 +5,7 @@
  * predicate and the argument/return blocks here. Importing this module does not register a
  * TurboWarp extension and does not touch the `Scratch` global.
  */
-import {FunctionDispatcher} from './function-dispatcher.js';
+import {FunctionDispatcher, outcomeToPromise, type CallOutcome} from './function-dispatcher.js';
 import {
   scanFunctionDefinitions,
   toFunctionTools,
@@ -32,7 +32,9 @@ export {
   resolveSchemaReference,
   scanSchemaDefinitions
 } from './schema-builder.js';
-export type {RuntimeLike, RuntimeThread, BlockUtilityLike} from './runtime-types.js';
+export type {RuntimeLike, RuntimeThread, BlockUtilityLike, ThreadExecutionPort} from './runtime-types.js';
+export type {CallOutcome} from './function-dispatcher.js';
+export {MAX_SYNC_DEPTH} from './function-dispatcher.js';
 export {parseJsonOrText, readArgumentPath, toScratchValue} from './function-dispatcher.js';
 export {validateAgainstSchema, validateSchemaDefinition} from './schema-validator.js';
 
@@ -41,7 +43,7 @@ export interface PromiseRef {
 }
 
 export interface CallOptions {
-  /** Thread of the calling block, used to detect reentrant calls. */
+  /** Thread of the calling block. It links nested calls and detects reentrant ones. */
   caller?: RuntimeThread;
   /** Refuse functions that are not exported as tools (for calls chosen by a model). */
   exportedOnly?: boolean;
@@ -75,6 +77,14 @@ export interface NamedFunctions {
 
   /** Calls a function and waits for its result. Arguments are always validated against its schema. */
   call(name: string, args: unknown, options?: CallOptions): Promise<unknown>;
+  /**
+   * Calls a function and reports at once whether it already settled. On the TurboWarp Plus VM, a
+   * function that does not wait settles before this returns, so a block can report its result in
+   * the same step.
+   */
+  callNow(name: string, args: unknown, options?: CallOptions): CallOutcome;
+  /** True when calls run inside the calling block and may recurse (TurboWarp Plus VM). */
+  readonly runsSynchronously: boolean;
   /** Starts a function and returns a reference to await later. */
   start(name: string, args: unknown, options?: CallOptions): PromiseRef;
   await(ref: unknown): Promise<unknown>;
@@ -150,18 +160,35 @@ class NamedFunctionsImpl implements NamedFunctions {
     return this.scan().functions.some((definition) => definition.name === name.trim());
   }
 
+  public get runsSynchronously(): boolean {
+    return this.dispatcher.runsSynchronously;
+  }
+
   public call(name: string, args: unknown, options: CallOptions = {}): Promise<unknown> {
+    return outcomeToPromise(this.callNow(name, args, options));
+  }
+
+  public callNow(name: string, args: unknown, options: CallOptions = {}): CallOutcome {
     const trimmed = name.trim();
     const definition = this.scan().functions.find((candidate) => candidate.name === trimmed);
-    if (!definition) return Promise.reject(new Error(`Unknown function: ${trimmed}`));
+    if (!definition) return rejected(`Unknown function: ${trimmed}`);
     if (options.exportedOnly && definition.exportAs !== 'tool') {
-      return Promise.reject(new Error(`Function ${trimmed} is not exported as a tool.`));
+      return rejected(`Function ${trimmed} is not exported as a tool.`);
     }
     const errors = validateAgainstSchema(args, definition.parameters);
     if (errors.length > 0) {
-      return Promise.reject(new Error(`Invalid arguments for ${trimmed}: ${errors.join('; ')}`));
+      return rejected(`Invalid arguments for ${trimmed}: ${errors.join('; ')}`);
     }
-    return this.dispatcher.invoke(trimmed, args, options.caller, definition.returns);
+    const target = this.options.runtime.targets.find(
+      (candidate) => candidate.isOriginal !== false && candidate.blocks._blocks[definition.blockId] !== undefined
+    );
+    return this.dispatcher.invokeNow({
+      name: trimmed,
+      args,
+      caller: options.caller,
+      returnSchema: definition.returns,
+      script: target ? {target, blockId: definition.blockId} : undefined
+    });
   }
 
   public start(name: string, args: unknown, options: CallOptions = {}): PromiseRef {
@@ -248,6 +275,10 @@ class NamedFunctionsImpl implements NamedFunctions {
       if (entry.settled) this.promises.delete(id);
     }
   }
+}
+
+function rejected(message: string): CallOutcome {
+  return {state: 'rejected', error: new Error(message)};
 }
 
 function messageOf(error: unknown): string {

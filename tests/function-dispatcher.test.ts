@@ -1,16 +1,18 @@
 import {describe, expect, it} from 'vitest';
 import {
   FunctionDispatcher,
+  MAX_SYNC_DEPTH,
+  type CallOutcome,
   parseJsonOrText,
   readArgumentPath,
   toScratchValue
 } from '../src/function-dispatcher.js';
 import {FakeRuntime} from './helpers/fake-runtime.js';
+import type {RuntimeTarget, RuntimeThread} from '../src/runtime-types.js';
 
 const OPCODE = 'ext_defineFunction';
 
-function setup(names = ['f', 'g'], timeoutMs = 30_000) {
-  const runtime = new FakeRuntime();
+function setup(names = ['f', 'g'], timeoutMs = 30_000, runtime = new FakeRuntime()) {
   const timers: Array<{callback: () => void; ms: number; cleared: boolean}> = [];
   const dispatcher = new FunctionDispatcher(runtime, {
     hatOpcode: OPCODE,
@@ -150,6 +152,177 @@ describe('FunctionDispatcher', () => {
     const {runtime, dispatcher} = setup();
     expect(() => dispatcher.argumentsFor(runtime.spawnThread())).toThrow('inside a running function');
     expect(() => dispatcher.returnFrom(undefined, 1)).toThrow('inside a running function');
+  });
+});
+
+type Body = (thread: RuntimeThread) => 'done' | 'waiting';
+
+/**
+ * Gives the fake runtime a thread execution port. `bodies` stands in for the function scripts: runNow
+ * calls the body of the script the thread was started at.
+ */
+function setupWithPort(bodies: Record<string, Body>, names = ['f', 'g']) {
+  const runtime = new FakeRuntime();
+  const scripts = new Map<RuntimeThread, string>();
+  const ran: string[] = [];
+  const port = {
+    version: 1,
+    startScript: (blockId: string) => {
+      if (!bodies[blockId]) throw new Error('Block is not the top of a script');
+      const thread = runtime.spawnThread();
+      scripts.set(thread, blockId);
+      return thread;
+    },
+    runNow: (thread: RuntimeThread) => {
+      const blockId = scripts.get(thread) as string;
+      ran.push(blockId);
+      const status = (bodies[blockId] as Body)(thread);
+      if (status === 'done') runtime.endThread(thread);
+      return status;
+    }
+  };
+  Object.assign(runtime, {getThreadExecutionPort: () => port});
+  return {...setup(names, 30_000, runtime), ran};
+}
+
+const target = {blocks: {_blocks: {}}} as RuntimeTarget;
+const script = (blockId: string) => ({target, blockId});
+
+describe('FunctionDispatcher with the thread execution port', () => {
+  it('runs the script inside the call and settles before returning', () => {
+    let seenArgs: unknown;
+    const {runtime, dispatcher, timers} = setupWithPort({
+      fHat: (thread) => {
+        expect(dispatcher.matchHat('f', thread)).toBe(true);
+        expect(dispatcher.matchHat('g', thread)).toBe(false);
+        seenArgs = dispatcher.argumentsFor(thread);
+        dispatcher.returnFrom(thread, 42);
+        return 'done';
+      }
+    });
+    expect(dispatcher.runsSynchronously).toBe(true);
+    expect(dispatcher.invokeNow({name: 'f', args: {x: 1}, script: script('fHat')})).toEqual({state: 'fulfilled', value: 42});
+    expect(seenArgs).toEqual({x: 1});
+    expect(runtime.startedHats).toEqual([]);
+    expect(timers).toEqual([]);
+    expect(dispatcher.pendingCount).toBe(0);
+  });
+
+  it('settles with null when the script ends without return', () => {
+    const {dispatcher} = setupWithPort({fHat: () => 'done'});
+    expect(dispatcher.invokeNow({name: 'f', args: {}, script: script('fHat')})).toEqual({state: 'fulfilled', value: null});
+  });
+
+  it('checks the return schema of a call that settles at once', () => {
+    const {dispatcher} = setupWithPort({
+      fHat: (thread) => {
+        dispatcher.returnFrom(thread, 'text');
+        return 'done';
+      }
+    });
+    const outcome = dispatcher.invokeNow({name: 'f', args: {}, returnSchema: {type: 'number'}, script: script('fHat')});
+    expect(outcome.state).toBe('rejected');
+    expect((outcome as {error: Error}).error.message).toContain('Invalid return value for f');
+  });
+
+  it('lets a function call itself', () => {
+    const depths: number[] = [];
+    const {dispatcher} = setupWithPort({
+      fHat: (thread) => {
+        const n = (dispatcher.argumentsFor(thread) as {n: number}).n;
+        depths.push(n);
+        if (n === 0) {
+          dispatcher.returnFrom(thread, 0);
+          return 'done';
+        }
+        const inner = dispatcher.invokeNow({name: 'f', args: {n: n - 1}, caller: thread, script: script('fHat')});
+        dispatcher.returnFrom(thread, n + (inner as {value: number}).value);
+        return 'done';
+      }
+    });
+    expect(dispatcher.invokeNow({name: 'f', args: {n: 3}, script: script('fHat')})).toEqual({state: 'fulfilled', value: 6});
+    expect(depths).toEqual([3, 2, 1, 0]);
+  });
+
+  it('hands a waiting script to the sequencer and settles when it returns', async () => {
+    let waiting: RuntimeThread | undefined;
+    const {dispatcher, timers} = setupWithPort({
+      fHat: (thread) => {
+        waiting = thread;
+        return 'waiting';
+      }
+    });
+    const outcome = dispatcher.invokeNow({name: 'f', args: {}, script: script('fHat')});
+    expect(outcome.state).toBe('pending');
+    expect(timers).toHaveLength(1);
+    dispatcher.returnFrom(waiting, 'later');
+    await expect((outcome as {promise: Promise<unknown>}).promise).resolves.toBe('later');
+    expect(timers[0]?.cleared).toBe(true);
+  });
+
+  it('settles with null when a waiting script ends without return', async () => {
+    let waiting: RuntimeThread | undefined;
+    const {runtime, dispatcher} = setupWithPort({
+      fHat: (thread) => {
+        waiting = thread;
+        return 'waiting';
+      }
+    });
+    const outcome = dispatcher.invokeNow({name: 'f', args: {}, script: script('fHat')}) as {promise: Promise<unknown>};
+    runtime.endThread(waiting as RuntimeThread);
+    runtime.step();
+    await expect(outcome.promise).resolves.toBeNull();
+  });
+
+  it('starts calls deeper than the synchronous limit without running them', () => {
+    // Every call waits, so each one becomes the caller of the next and the chain grows by one.
+    let caller: RuntimeThread | undefined;
+    const {runtime, dispatcher, ran} = setupWithPort({
+      fHat: (thread) => {
+        caller = thread;
+        return 'waiting';
+      }
+    });
+    for (let depth = 1; depth <= MAX_SYNC_DEPTH; depth++) {
+      expect(dispatcher.invokeNow({name: 'f', args: {}, caller, script: script('fHat')}).state).toBe('pending');
+    }
+    expect(ran).toHaveLength(MAX_SYNC_DEPTH);
+    const deep: CallOutcome = dispatcher.invokeNow({name: 'f', args: {}, caller, script: script('fHat')});
+    expect(deep.state).toBe('pending');
+    expect(ran).toHaveLength(MAX_SYNC_DEPTH);
+    expect(runtime.threads).toHaveLength(MAX_SYNC_DEPTH + 1);
+    dispatcher.cancelAll('stopped');
+  });
+
+  it('reports a script that cannot be started', () => {
+    const {dispatcher} = setupWithPort({});
+    const outcome = dispatcher.invokeNow({name: 'f', args: {}, script: script('gone')});
+    expect(outcome.state).toBe('rejected');
+    expect((outcome as {error: Error}).error.message).toBe('Block is not the top of a script');
+    expect(dispatcher.pendingCount).toBe(0);
+  });
+
+  it('cancels waiting calls when the project stops', async () => {
+    const {runtime, dispatcher} = setupWithPort({fHat: () => 'waiting'});
+    const outcome = dispatcher.invokeNow({name: 'f', args: {}, script: script('fHat')}) as {promise: Promise<unknown>};
+    runtime.emit('PROJECT_STOP_ALL');
+    await expect(outcome.promise).rejects.toThrow('stopped');
+    expect(dispatcher.pendingCount).toBe(0);
+  });
+
+  it('falls back to starting hats when the script is not known', async () => {
+    const {runtime, dispatcher} = setupWithPort({});
+    const result = dispatcher.invoke('f', {});
+    expect(runtime.startedHats).toEqual([OPCODE]);
+    const {thread} = runHat(runtime, dispatcher, 'f');
+    dispatcher.returnFrom(thread, 1);
+    await expect(result).resolves.toBe(1);
+  });
+
+  it('ignores a port of another version', () => {
+    const runtime = new FakeRuntime();
+    Object.assign(runtime, {getThreadExecutionPort: () => ({version: 2})});
+    expect(setup(['f'], 30_000, runtime).dispatcher.runsSynchronously).toBe(false);
   });
 });
 

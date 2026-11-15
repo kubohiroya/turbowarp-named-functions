@@ -24,7 +24,7 @@ Run `pnpm run samples:build` after source/bundle changes and `pnpm run samples:c
 - Calls a function by name and waits for its result (`call function`), or starts it and awaits it later (`start function`, `await`, `await all`).
 - Checks arguments against the schema before the function runs, without generating code.
 - Optionally checks returned values against the same JSON Schema subset.
-- Detects reentrant calls (a function that calls itself directly or indirectly) and reports an error instead of waiting forever.
+- On the TurboWarp Plus runtime, runs a call inside the calling block and lets functions call themselves. On stock TurboWarp, reports such recursion as an error instead of waiting forever.
 - Provides a Composition API so other extensions can bundle the same capability with their own blocks.
 
 ## Requirements and safety
@@ -295,10 +295,12 @@ Reports the most recent function error, or an empty string.
 
 | Situation | Behavior |
 |---|---|
-| A call starts | Every `define function` hat is started; only the one whose NAME matches continues. |
-| Timing | Each call takes at least one frame, because the function runs as its own script. Use custom blocks for tight loops and recursion. |
-| Several calls to the same function | They run one at a time in order. Different functions run concurrently. |
-| A function calls itself, directly or through other functions | The call fails with `Reentrant call: a -> b -> a`. Use a custom block for recursion. |
+| A call starts (TurboWarp Plus runtime) | The function's script starts directly and runs inside the calling block. |
+| A call starts (stock TurboWarp) | Every `define function` hat is started; only the one whose NAME matches continues. |
+| Timing (TurboWarp Plus runtime) | A function that does not wait finishes within the call, like a custom block that runs without screen refresh. A function that waits, or a call nested deeper than 128 levels, settles on a later frame. |
+| Timing (stock TurboWarp) | Each call takes at least one frame, because the function runs as its own script. Use custom blocks for tight loops. |
+| Several calls to the same function | On the TurboWarp Plus runtime, each call runs on its own. On stock TurboWarp, they run one at a time in order; different functions run concurrently. |
+| A function calls itself, directly or through other functions | Works on the TurboWarp Plus runtime. On stock TurboWarp, the call fails with `Reentrant call: a -> b -> a`; use a custom block for recursion there. |
 | Arguments do not match the schema | The call fails before the script starts; `last function error` explains which field. |
 | A return value does not match RETURNS | The call fails; `last function error` reports the expected type and JSON path. Ending without `return` is checked as `null`. |
 | The script ends without `return` | The result is empty (`null`). |

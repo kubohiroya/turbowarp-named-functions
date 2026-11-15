@@ -72,11 +72,11 @@ describe('NamedFunctionsExtension', () => {
 
   it('records errors for bad JSON, unknown names, and invalid arguments', async () => {
     const {extension} = setup();
-    await expect(extension.callFunction({NAME: 'add', ARGS: '{oops'})).resolves.toBe('');
+    expect(extension.callFunction({NAME: 'add', ARGS: '{oops'})).toBe('');
     expect(extension.lastError()).toContain('ARGS must be JSON');
-    await expect(extension.callFunction({NAME: 'nope', ARGS: ''})).resolves.toBe('');
+    expect(extension.callFunction({NAME: 'nope', ARGS: ''})).toBe('');
     expect(extension.lastError()).toContain('Unknown function: nope');
-    await expect(extension.callFunction({NAME: 'add', ARGS: '{"a":1}'})).resolves.toBe('');
+    expect(extension.callFunction({NAME: 'add', ARGS: '{"a":1}'})).toBe('');
     expect(extension.lastError()).toContain('$.b is required');
     expect(extension.isDefined({NAME: 'add'})).toBe(true);
   });
@@ -160,7 +160,7 @@ describe('NamedFunctionsExtension schema blocks', () => {
 
   it('validates call arguments against a schema named by the function', async () => {
     const {runtime, extension} = setupSchemas();
-    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":-1}'})).resolves.toBe('');
+    expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":-1}'})).toBe('');
     expect(extension.lastError()).toContain('Invalid arguments for scored: $.points must be >= 0');
     expect(runtime.startedHats).toEqual([]);
 
