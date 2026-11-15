@@ -167,18 +167,30 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
 
   // ---- calls --------------------------------------------------------------------------------
 
-  public async callFunction(args: Args, util?: Util): Promise<string | number | boolean> {
+  /**
+   * Returns the result itself when the call settled while it was made (TurboWarp Plus VM), so the
+   * calling script continues in the same step. Otherwise returns a promise and the script waits.
+   */
+  public callFunction(args: Args, util?: Util): string | number | boolean | Promise<string | number | boolean> {
+    const succeed = (result: unknown) => {
+      this.lastErrorMessage = '';
+      return toScratchValue(result);
+    };
+    const fail = (error: unknown) => {
+      this.lastErrorMessage = messageOf(error);
+      return '';
+    };
     try {
-      const result = await this.functions.call(
+      const outcome = this.functions.callNow(
         Scratch.Cast.toString(args.NAME),
         parseArguments(Scratch.Cast.toString(args.ARGS)),
         util?.thread ? {caller: util.thread} : {}
       );
-      this.lastErrorMessage = '';
-      return toScratchValue(result);
+      if (outcome.state === 'fulfilled') return succeed(outcome.value);
+      if (outcome.state === 'rejected') return fail(outcome.error);
+      return outcome.promise.then(succeed, fail);
     } catch (error) {
-      this.lastErrorMessage = messageOf(error);
-      return '';
+      return fail(error);
     }
   }
 

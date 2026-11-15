@@ -316,9 +316,9 @@
             <table class="math-table behavior-table">
               <thead><tr><th>Situation</th><th>What happens</th></tr></thead>
               <tbody>
-                <tr><td>Each call</td><td>Takes at least one frame. Use custom blocks for tight loops.</td></tr>
-                <tr><td>Several calls to one function</td><td>Run one at a time, in order. Different functions run concurrently.</td></tr>
-                <tr><td>A function calls itself, directly or indirectly</td><td>Fails with <code>Reentrant call: a -&gt; b -&gt; a</code> instead of waiting forever. Use a custom block for recursion.</td></tr>
+                <tr><td>Each call</td><td>On the TurboWarp Plus runtime, a function that does not wait finishes within the call. On stock TurboWarp, a call takes at least one frame; use custom blocks for tight loops.</td></tr>
+                <tr><td>Several calls to one function</td><td>On the TurboWarp Plus runtime, each call runs on its own. On stock TurboWarp, they run one at a time, in order; different functions run concurrently.</td></tr>
+                <tr><td>A function calls itself, directly or indirectly</td><td>Works on the TurboWarp Plus runtime. On stock TurboWarp, fails with <code>Reentrant call: a -&gt; b -&gt; a</code> instead of waiting forever; use a custom block for recursion there.</td></tr>
                 <tr><td>A function runs longer than 30 seconds</td><td>The call fails with a timeout.</td></tr>
                 <tr><td>More than 8 started calls at once</td><td>Further <strong>start function</strong> calls wait for a free slot.</td></tr>
                 <tr><td>The project stops</td><td>Running calls fail and promise references are cleared.</td></tr>
@@ -444,9 +444,10 @@ functions.release();</code></pre>
           <details>
             <summary>A function that calls itself reports “Reentrant call”</summary>
             <p>
-              Recursion through named functions is rejected on purpose, because the inner call would
-              wait for the outer one forever. Put recursive logic in a custom block and call that
-              from the function.
+              You are on stock TurboWarp. There, the inner call would wait for the outer one
+              forever, so recursion through named functions is rejected on purpose. Open the project
+              in TurboWarp Plus, where functions may call themselves, or put the recursive logic in a
+              custom block and call that from the function.
             </p>
           </details>
           <details>

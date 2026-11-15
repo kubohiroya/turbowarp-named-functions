@@ -115,12 +115,23 @@ function deepEqual(left, right) {
 function asRecord(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
+/**
+* Calls nested deeper than this run on later frames instead of inside the calling block, so deep
+* recursion cannot overflow the JavaScript stack.
+*/
+var MAX_SYNC_DEPTH = 128;
+function outcomeToPromise(outcome) {
+	if (outcome.state === "fulfilled") return Promise.resolve(outcome.value);
+	if (outcome.state === "rejected") return Promise.reject(outcome.error);
+	return outcome.promise;
+}
 var FunctionDispatcher = class {
 	constructor(runtime, options) {
 		this.runtime = runtime;
 		this.options = options;
 		this.queue = [];
 		this.running = /* @__PURE__ */ new Map();
+		this.direct = /* @__PURE__ */ new Set();
 		this.byThread = /* @__PURE__ */ new Map();
 		this.starting = null;
 		this.step = 0;
@@ -129,39 +140,60 @@ var FunctionDispatcher = class {
 		this.timeoutMs = options.timeoutMs ?? 3e4;
 		this.setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
 		this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle));
+		const port = runtime.getThreadExecutionPort?.();
+		this.port = port?.version === 1 ? port : null;
 		runtime.on("AFTER_EXECUTE", this.onAfterExecute);
 		runtime.on("PROJECT_STOP_ALL", this.onStopAll);
+	}
+	/** True when calls run inside the calling block and may recurse. */
+	get runsSynchronously() {
+		return this.port !== null;
 	}
 	/**
 	* Starts a named function. `caller` is the thread of the block making the call, if any; it is used
 	* to detect reentrant calls.
 	*/
 	invoke(name, args, caller, returnSchema) {
-		if (!this.options.knownNames().has(name)) return Promise.reject(/* @__PURE__ */ new Error(`Unknown function: ${name}`));
+		return outcomeToPromise(this.invokeNow({
+			name,
+			args,
+			caller,
+			returnSchema
+		}));
+	}
+	/**
+	* Starts a named function and reports right away whether it already settled. With the port and a
+	* `script`, a function that does not wait settles before this returns.
+	*/
+	invokeNow(request) {
+		const { name, caller } = request;
+		if (!this.options.knownNames().has(name)) return {
+			state: "rejected",
+			error: /* @__PURE__ */ new Error(`Unknown function: ${name}`)
+		};
 		const parentChain = caller ? this.byThread.get(caller)?.chain ?? [] : [];
-		if (parentChain.includes(name)) return Promise.reject(/* @__PURE__ */ new Error(`Reentrant call: ${[...parentChain, name].join(" -> ")}. Use a custom block for recursion.`));
-		return new Promise((resolve, reject) => {
-			const invocation = {
-				name,
-				args,
-				...returnSchema === void 0 ? {} : { returnSchema },
-				chain: [...parentChain, name],
-				resolve,
-				reject,
-				thread: null,
-				startedAtStep: -1,
-				timer: null,
-				settled: false
-			};
-			invocation.timer = this.setTimer(() => this.settle(invocation, /* @__PURE__ */ new Error(`Function ${name} timed out.`)), this.timeoutMs);
-			this.queue.push(invocation);
-			this.pump();
-		});
+		const chain = [...parentChain, name];
+		if (this.port && request.script) return this.runDirect(this.port, request, chain);
+		if (parentChain.includes(name)) return {
+			state: "rejected",
+			error: /* @__PURE__ */ new Error(`Reentrant call: ${chain.join(" -> ")}. Recursion needs the TurboWarp Plus runtime; use a custom block for recursion here.`)
+		};
+		const invocation = this.createInvocation(request, chain);
+		this.armTimer(invocation);
+		this.queue.push(invocation);
+		this.pump();
+		return invocation.outcome ?? {
+			state: "pending",
+			promise: invocation.promise
+		};
 	}
 	/** Hat predicate: true only for the script that should run the invocation being started. */
 	matchHat(name, thread) {
+		if (!thread) return false;
+		const bound = this.byThread.get(thread);
+		if (bound) return bound.name === name.trim();
 		const invocation = this.starting;
-		if (!invocation || !thread || invocation.name !== name.trim()) return false;
+		if (!invocation || invocation.name !== name.trim()) return false;
 		invocation.thread = thread;
 		this.byThread.set(thread, invocation);
 		this.starting = null;
@@ -178,16 +210,66 @@ var FunctionDispatcher = class {
 		this.settleWithValue(invocation, value);
 	}
 	cancelAll(reason) {
-		for (const invocation of [...this.queue, ...this.running.values()]) this.settle(invocation, new Error(reason));
+		for (const invocation of [
+			...this.queue,
+			...this.running.values(),
+			...this.direct
+		]) this.settle(invocation, new Error(reason));
 		if (this.starting) this.settle(this.starting, new Error(reason));
 	}
 	get pendingCount() {
-		return this.queue.length + this.running.size;
+		return this.queue.length + this.running.size + this.direct.size;
 	}
 	release() {
 		this.cancelAll("Named functions were released.");
 		this.runtime.off?.("AFTER_EXECUTE", this.onAfterExecute);
 		this.runtime.off?.("PROJECT_STOP_ALL", this.onStopAll);
+	}
+	runDirect(port, request, chain) {
+		const invocation = this.createInvocation(request, chain);
+		invocation.promise.catch(() => void 0);
+		const script = request.script;
+		try {
+			const thread = port.startScript(script.blockId, script.target);
+			invocation.thread = thread;
+			this.byThread.set(thread, invocation);
+			this.direct.add(invocation);
+			if (chain.length <= 128 && port.runNow(thread) === "done") this.settleWithValue(invocation, null);
+		} catch (error) {
+			this.settle(invocation, error instanceof Error ? error : new Error(String(error)));
+		}
+		if (invocation.outcome) return invocation.outcome;
+		this.armTimer(invocation);
+		return {
+			state: "pending",
+			promise: invocation.promise
+		};
+	}
+	createInvocation(request, chain) {
+		let resolve = () => void 0;
+		let reject = () => void 0;
+		const promise = new Promise((resolvePromise, rejectPromise) => {
+			resolve = resolvePromise;
+			reject = rejectPromise;
+		});
+		return {
+			name: request.name,
+			args: request.args,
+			...request.returnSchema === void 0 ? {} : { returnSchema: request.returnSchema },
+			chain,
+			promise,
+			resolve,
+			reject,
+			thread: null,
+			startedAtStep: -1,
+			timer: null,
+			settled: false,
+			outcome: null
+		};
+	}
+	armTimer(invocation) {
+		if (invocation.settled) return;
+		invocation.timer = this.setTimer(() => this.settle(invocation, /* @__PURE__ */ new Error(`Function ${invocation.name} timed out.`)), this.timeoutMs);
 	}
 	pump() {
 		if (this.starting) return;
@@ -204,20 +286,32 @@ var FunctionDispatcher = class {
 		this.step += 1;
 		const starting = this.starting;
 		if (starting && this.step - starting.startedAtStep > 2) this.settle(starting, /* @__PURE__ */ new Error(`Function ${starting.name} did not start. Is its script already running?`));
-		for (const invocation of this.running.values()) if (invocation.thread && !this.runtime.threads.includes(invocation.thread)) this.settleWithValue(invocation, null);
+		for (const invocation of [...this.running.values(), ...this.direct]) if (invocation.thread && !this.runtime.threads.includes(invocation.thread)) this.settleWithValue(invocation, null);
 		this.pump();
 	}
 	settle(invocation, error, value) {
 		if (invocation.settled) return;
 		invocation.settled = true;
-		this.clearTimer(invocation.timer);
+		if (invocation.timer !== null) this.clearTimer(invocation.timer);
 		const queued = this.queue.indexOf(invocation);
 		if (queued >= 0) this.queue.splice(queued, 1);
 		if (this.running.get(invocation.name) === invocation) this.running.delete(invocation.name);
+		this.direct.delete(invocation);
 		if (invocation.thread) this.byThread.delete(invocation.thread);
 		if (this.starting === invocation) this.starting = null;
-		if (error) invocation.reject(error);
-		else invocation.resolve(value);
+		if (error) {
+			invocation.outcome = {
+				state: "rejected",
+				error
+			};
+			invocation.reject(error);
+		} else {
+			invocation.outcome = {
+				state: "fulfilled",
+				value
+			};
+			invocation.resolve(value);
+		}
 	}
 	settleWithValue(invocation, value) {
 		if (invocation.returnSchema !== void 0) {
@@ -736,14 +830,30 @@ var NamedFunctionsImpl = class {
 	isDefined(name) {
 		return this.scan().functions.some((definition) => definition.name === name.trim());
 	}
+	get runsSynchronously() {
+		return this.dispatcher.runsSynchronously;
+	}
 	call(name, args, options = {}) {
+		return outcomeToPromise(this.callNow(name, args, options));
+	}
+	callNow(name, args, options = {}) {
 		const trimmed = name.trim();
 		const definition = this.scan().functions.find((candidate) => candidate.name === trimmed);
-		if (!definition) return Promise.reject(/* @__PURE__ */ new Error(`Unknown function: ${trimmed}`));
-		if (options.exportedOnly && definition.exportAs !== "tool") return Promise.reject(/* @__PURE__ */ new Error(`Function ${trimmed} is not exported as a tool.`));
+		if (!definition) return rejected(`Unknown function: ${trimmed}`);
+		if (options.exportedOnly && definition.exportAs !== "tool") return rejected(`Function ${trimmed} is not exported as a tool.`);
 		const errors = validateAgainstSchema(args, definition.parameters);
-		if (errors.length > 0) return Promise.reject(/* @__PURE__ */ new Error(`Invalid arguments for ${trimmed}: ${errors.join("; ")}`));
-		return this.dispatcher.invoke(trimmed, args, options.caller, definition.returns);
+		if (errors.length > 0) return rejected(`Invalid arguments for ${trimmed}: ${errors.join("; ")}`);
+		const target = this.options.runtime.targets.find((candidate) => candidate.isOriginal !== false && candidate.blocks._blocks[definition.blockId] !== void 0);
+		return this.dispatcher.invokeNow({
+			name: trimmed,
+			args,
+			caller: options.caller,
+			returnSchema: definition.returns,
+			script: target ? {
+				target,
+				blockId: definition.blockId
+			} : void 0
+		});
 	}
 	start(name, args, options = {}) {
 		const id = `p_${this.nextPromiseId++}`;
@@ -810,8 +920,14 @@ var NamedFunctionsImpl = class {
 		}
 	}
 };
+function rejected(message) {
+	return {
+		state: "rejected",
+		error: new Error(message)
+	};
+}
 function messageOf(error) {
 	return error instanceof Error ? error.message : String(error);
 }
 //#endregion
-export { FUNCTION_NAME_PATTERN, MAX_SCHEMA_REFERENCE_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, createNamedFunctions, parseJsonOrText, parseSchemaReference, readArgumentPath, resolveSchemaReference, scanFunctionDefinitions, scanSchemaDefinitions, toFunctionTools, toScratchValue, validateAgainstSchema, validateSchemaDefinition };
+export { FUNCTION_NAME_PATTERN, MAX_SCHEMA_REFERENCE_DEPTH, MAX_SYNC_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, createNamedFunctions, parseJsonOrText, parseSchemaReference, readArgumentPath, resolveSchemaReference, scanFunctionDefinitions, scanSchemaDefinitions, toFunctionTools, toScratchValue, validateAgainstSchema, validateSchemaDefinition };

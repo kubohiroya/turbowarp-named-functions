@@ -1,3 +1,11 @@
+/**
+ * Composition API: named functions without TurboWarp block definitions.
+ *
+ * A consumer extension owns its `define function` hat (and its opcode) and forwards the hat
+ * predicate and the argument/return blocks here. Importing this module does not register a
+ * TurboWarp extension and does not touch the `Scratch` global.
+ */
+import { type CallOutcome } from './function-dispatcher.js';
 import { type FunctionScan, type FunctionTool } from './function-registry.js';
 import { type SchemaBlockOpcodes, type SchemaScan } from './schema-builder.js';
 import type { RuntimeLike, RuntimeThread } from './runtime-types.js';
@@ -5,14 +13,16 @@ export type { FunctionDefinition, FunctionScan, FunctionScanOptions, FunctionToo
 export { FUNCTION_NAME_PATTERN, scanFunctionDefinitions, toFunctionTools } from './function-registry.js';
 export type { SchemaBlockOpcodes, SchemaDefinition, SchemaReference, SchemaScan } from './schema-builder.js';
 export { MAX_SCHEMA_REFERENCE_DEPTH, SCHEMA_NAME_PATTERN, SCHEMA_VERSION_PATTERN, parseSchemaReference, resolveSchemaReference, scanSchemaDefinitions } from './schema-builder.js';
-export type { RuntimeLike, RuntimeThread, BlockUtilityLike } from './runtime-types.js';
+export type { RuntimeLike, RuntimeThread, BlockUtilityLike, ThreadExecutionPort } from './runtime-types.js';
+export type { CallOutcome } from './function-dispatcher.js';
+export { MAX_SYNC_DEPTH } from './function-dispatcher.js';
 export { parseJsonOrText, readArgumentPath, toScratchValue } from './function-dispatcher.js';
 export { validateAgainstSchema, validateSchemaDefinition } from './schema-validator.js';
 export interface PromiseRef {
     $promise: string;
 }
 export interface CallOptions {
-    /** Thread of the calling block, used to detect reentrant calls. */
+    /** Thread of the calling block. It links nested calls and detects reentrant ones. */
     caller?: RuntimeThread;
     /** Refuse functions that are not exported as tools (for calls chosen by a model). */
     exportedOnly?: boolean;
@@ -43,6 +53,14 @@ export interface NamedFunctions {
     isDefined(name: string): boolean;
     /** Calls a function and waits for its result. Arguments are always validated against its schema. */
     call(name: string, args: unknown, options?: CallOptions): Promise<unknown>;
+    /**
+     * Calls a function and reports at once whether it already settled. On the TurboWarp Plus VM, a
+     * function that does not wait settles before this returns, so a block can report its result in
+     * the same step.
+     */
+    callNow(name: string, args: unknown, options?: CallOptions): CallOutcome;
+    /** True when calls run inside the calling block and may recurse (TurboWarp Plus VM). */
+    readonly runsSynchronously: boolean;
     /** Starts a function and returns a reference to await later. */
     start(name: string, args: unknown, options?: CallOptions): PromiseRef;
     await(ref: unknown): Promise<unknown>;

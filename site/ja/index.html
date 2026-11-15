@@ -281,9 +281,9 @@
             <table class="math-table behavior-table">
               <thead><tr><th>状況</th><th>動作</th></tr></thead>
               <tbody>
-                <tr><td>呼び出しごと</td><td>最低1フレームかかります。細かいループにはブロック定義を使ってください。</td></tr>
-                <tr><td>同じ関数への複数の呼び出し</td><td>順番に1つずつ実行されます。異なる関数は並行して動きます。</td></tr>
-                <tr><td>関数が直接または間接に自分を呼ぶ</td><td>永久に待つ代わりに<code>Reentrant call: a -&gt; b -&gt; a</code>で失敗します。再帰にはブロック定義を使ってください。</td></tr>
+                <tr><td>呼び出しごと</td><td>TurboWarp Plusのランタイムでは、待ちのない関数は呼び出しの中で終わります。素のTurboWarpでは最低1フレームかかるので、細かいループにはブロック定義を使ってください。</td></tr>
+                <tr><td>同じ関数への複数の呼び出し</td><td>TurboWarp Plusのランタイムでは、呼び出しごとに独立して動きます。素のTurboWarpでは順番に1つずつ実行され、異なる関数は並行して動きます。</td></tr>
+                <tr><td>関数が直接または間接に自分を呼ぶ</td><td>TurboWarp Plusのランタイムでは動きます。素のTurboWarpでは、永久に待つ代わりに<code>Reentrant call: a -&gt; b -&gt; a</code>で失敗するので、再帰にはブロック定義を使ってください。</td></tr>
                 <tr><td>関数が30秒を超えて動く</td><td>タイムアウトで失敗します。</td></tr>
                 <tr><td>同時に開始した呼び出しが8件を超える</td><td>以降の<strong>start function</strong>は空きが出るまで待ちます。</td></tr>
                 <tr><td>プロジェクトを停止</td><td>実行中の呼び出しは失敗し、プロミス参照は消去されます。</td></tr>
@@ -401,7 +401,7 @@ functions.release();</code></pre>
           <details>
             <summary>自分を呼ぶ関数が「Reentrant call」になる</summary>
             <p>
-              内側の呼び出しが外側の終了を永久に待つことになるため、名前付き関数を通した再帰は意図的に拒否されます。再帰する処理はブロック定義に書き、関数からそれを呼んでください。
+              素のTurboWarpで動かしています。素のTurboWarpでは内側の呼び出しが外側の終了を永久に待つことになるため、名前付き関数を通した再帰は意図的に拒否されます。関数が自分を呼べるTurboWarp Plusで開くか、再帰する処理をブロック定義に書き、関数からそれを呼んでください。
             </p>
           </details>
           <details>

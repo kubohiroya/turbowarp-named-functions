@@ -1,6 +1,8 @@
 // Runs named functions on a real headless TurboWarp VM.
 // Skipped unless SCRATCH_VM_PATH points at a TurboWarp scratch-vm checkout, e.g.
 //   SCRATCH_VM_PATH=/path/to/TurboWarp/scratch-vm pnpm test
+// With the TurboWarp Plus VM (kubohiroya/scratch-vm), which has the thread execution port, the suite
+// runs twice: once through the port and once with the port hidden, as on stock TurboWarp.
 import {createRequire} from 'node:module';
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
 import type {RuntimeLike} from '../src/runtime-types.js';
@@ -66,6 +68,25 @@ function buildProject() {
   });
   add('loopReturn', {opcode: `${ID}_returnValue`, parent: 'loop', inputs: {VALUE: [3, 'loopJoin', [10, '']]}});
 
+  // sum: if (n < 1) return 0 else return (n + (call function [sum] with (join '{"n":' (join (n - 1) '}'))))
+  define('sumFn', 'sum', '{"type":"object","properties":{"n":{"type":"number"}},"required":["n"]}', 'sumIf');
+  add('sumIf', {
+    opcode: 'control_if_else',
+    parent: 'sumFn',
+    inputs: {CONDITION: [2, 'sumLess'], SUBSTACK: [2, 'sumBase'], SUBSTACK2: [2, 'sumStep']}
+  });
+  add('sumArgCond', {opcode: `${ID}_functionArgument`, parent: 'sumLess', inputs: {PATH: [1, [10, 'n']]}});
+  add('sumLess', {opcode: 'operator_lt', parent: 'sumIf', inputs: {OPERAND1: [3, 'sumArgCond', [10, '']], OPERAND2: [1, [10, '1']]}});
+  add('sumBase', {opcode: `${ID}_returnValue`, parent: 'sumIf', inputs: {VALUE: [1, [10, '0']]}});
+  add('sumArgNext', {opcode: `${ID}_functionArgument`, parent: 'sumMinus', inputs: {PATH: [1, [10, 'n']]}});
+  add('sumMinus', {opcode: 'operator_subtract', parent: 'sumJoinTail', inputs: {NUM1: [3, 'sumArgNext', [4, '']], NUM2: [1, [4, '1']]}});
+  add('sumJoinTail', {opcode: 'operator_join', parent: 'sumJoin', inputs: {STRING1: [3, 'sumMinus', [10, '']], STRING2: [1, [10, '}']]}});
+  add('sumJoin', {opcode: 'operator_join', parent: 'sumCall', inputs: {STRING1: [1, [10, '{"n":']], STRING2: [3, 'sumJoinTail', [10, '']]}});
+  add('sumCall', {opcode: `${ID}_callFunction`, parent: 'sumAdd', inputs: {NAME: [1, [10, 'sum']], ARGS: [3, 'sumJoin', [10, '']]}});
+  add('sumArgSelf', {opcode: `${ID}_functionArgument`, parent: 'sumAdd', inputs: {PATH: [1, [10, 'n']]}});
+  add('sumAdd', {opcode: 'operator_add', parent: 'sumStep', inputs: {NUM1: [3, 'sumArgSelf', [4, '']], NUM2: [3, 'sumCall', [4, '']]}});
+  add('sumStep', {opcode: `${ID}_returnValue`, parent: 'sumIf', inputs: {VALUE: [3, 'sumAdd', [10, '']]}});
+
   // badReturn: return text against a numeric return schema
   define('badReturnFn', 'badReturn', '{"type":"object"}', 'badReturn');
   blocks.badReturnFn!.inputs = {...(blocks.badReturnFn!.inputs as Record<string, unknown>), RETURNS: [1, [10, '{"type":"number"}']]};
@@ -121,10 +142,19 @@ function buildProject() {
   };
 }
 
-describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
+function hasPort(): boolean {
+  if (!vmPath) return false;
+  const require = createRequire(import.meta.url);
+  const VirtualMachine = require(vmPath) as new () => VirtualMachineLike;
+  return typeof (new VirtualMachine().runtime as {getThreadExecutionPort?: unknown}).getThreadExecutionPort === 'function';
+}
+
+const modes = hasPort() ? (['port', 'stock'] as const) : (['stock'] as const);
+
+describe.skipIf(!vmPath).each(modes)('named functions on a real TurboWarp VM (%s)', (mode) => {
   let vm: VirtualMachineLike;
   let extension: {
-    callFunction(args: Record<string, unknown>): Promise<unknown>;
+    callFunction(args: Record<string, unknown>): unknown;
     startFunction(args: Record<string, unknown>): string;
     awaitAll(args: Record<string, unknown>): Promise<string>;
     schemaJson(args: Record<string, unknown>): string;
@@ -144,6 +174,10 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
     const {NamedFunctionsExtension} = await import('../src/extension.js');
     vm = new VirtualMachine();
     vm.setCompilerOptions({enabled: true});
+    if (mode === 'stock') {
+      // Hide the port, as on stock TurboWarp.
+      (vm.runtime as {getThreadExecutionPort?: unknown}).getThreadExecutionPort = undefined;
+    }
     const instance = new NamedFunctionsExtension({runtime: vm.runtime});
     extension = instance as unknown as typeof extension;
     const serviceName = vm.extensionManager._registerInternalExtension(instance);
@@ -153,25 +187,51 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
     vm.start();
   });
 
+  /** The call block's result, whether it settled during the call or later. */
+  const call = (args: Record<string, unknown>) => Promise.resolve(extension.callFunction(args));
+
   afterAll(() => {
     vm?.stop();
     vi.unstubAllGlobals();
   });
 
   it('calls a function by name', async () => {
-    await expect(extension.callFunction({NAME: 'add', ARGS: '{"a":1,"b":2}'})).resolves.toBe(3);
+    await expect(call({NAME: 'add', ARGS: '{"a":1,"b":2}'})).resolves.toBe(3);
   });
 
   it('calls a function from inside another function with the call block', async () => {
-    await expect(extension.callFunction({NAME: 'outer', ARGS: '{}'})).resolves.toBe(42);
+    await expect(call({NAME: 'outer', ARGS: '{}'})).resolves.toBe(42);
   });
 
-  it('reports reentrant calls instead of deadlocking', async () => {
-    await expect(extension.callFunction({NAME: 'loop', ARGS: '{}'})).resolves.toContain('Reentrant call: loop -> loop');
+  it.runIf(mode === 'port')('returns results in the same step through the port', () => {
+    expect(extension.callFunction({NAME: 'add', ARGS: '{"a":1,"b":2}'})).toBe(3);
+    expect(extension.callFunction({NAME: 'outer', ARGS: '{}'})).toBe(42);
+  });
+
+  it.runIf(mode === 'port')('runs recursive functions through the port', () => {
+    expect(extension.callFunction({NAME: 'sum', ARGS: '{"n":10}'})).toBe(55);
+  });
+
+  it.runIf(mode === 'port')('continues recursion deeper than the synchronous limit on later frames', async () => {
+    const result = extension.callFunction({NAME: 'sum', ARGS: '{"n":200}'});
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBe(20100);
+  });
+
+  it.runIf(mode === 'stock')('waits for the function script on stock TurboWarp', async () => {
+    const result = extension.callFunction({NAME: 'add', ARGS: '{"a":1,"b":2}'});
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBe(3);
+  });
+
+  it.runIf(mode === 'stock')('reports recursion as a runtime error on stock TurboWarp', async () => {
+    const result = await call({NAME: 'loop', ARGS: '{}'});
+    expect(result).toContain('Reentrant call: loop -> loop');
+    expect(result).toContain('Recursion needs the TurboWarp Plus runtime');
   });
 
   it('rejects a return value that does not match its return schema', async () => {
-    await expect(extension.callFunction({NAME: 'badReturn', ARGS: '{}'})).resolves.toBe('');
+    await expect(call({NAME: 'badReturn', ARGS: '{}'})).resolves.toBe('');
     expect(extension.lastError()).toContain('Invalid return value for badReturn: $ must be number');
   });
 
@@ -187,12 +247,12 @@ describe.skipIf(!vmPath)('named functions on a real TurboWarp VM', () => {
   });
 
   it('validates arguments against a block-built schema named by a function', async () => {
-    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":7}'})).resolves.toBe(7);
+    await expect(call({NAME: 'scored', ARGS: '{"points":7}'})).resolves.toBe(7);
 
-    await expect(extension.callFunction({NAME: 'scored', ARGS: '{"points":-1}'})).resolves.toBe('');
+    await expect(call({NAME: 'scored', ARGS: '{"points":-1}'})).resolves.toBe('');
     expect(extension.lastError()).toContain('Invalid arguments for scored: $.points must be >= 0');
 
-    await expect(extension.callFunction({NAME: 'scored', ARGS: '{}'})).resolves.toBe('');
+    await expect(call({NAME: 'scored', ARGS: '{}'})).resolves.toBe('');
     expect(extension.lastError()).toContain('$.points is required');
   });
 
