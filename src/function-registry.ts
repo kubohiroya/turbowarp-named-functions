@@ -273,7 +273,7 @@ function readScope(block: SerializedBlock): FunctionScope {
  * `define schema` hat. Text that is not JSON is treated as a name, so existing JSON projects are
  * unaffected.
  */
-function parseSchema(
+export function parseSchema(
   text: string,
   label: string,
   requireObjectType: boolean,

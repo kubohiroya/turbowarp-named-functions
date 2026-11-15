@@ -296,6 +296,9 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
           const target = this.runtime.getTargetById?.(where.targetId);
           return target !== undefined &&
             hasNameConflict(this.runtime.targets, DEFINE_FUNCTION_OPCODE, {target, blockId: where.blockId, name, scope});
+        }, {
+          list: () => schemaNames(this.functions.schemas().schemas),
+          resolve: (reference, label) => resolveSchemaReference(this.functions.schemas().schemas, reference, label)
         }),
         this.runtime
       ));
@@ -369,6 +372,14 @@ export class NamedFunctionsExtension implements TurboWarpExtension {
     if (block.blockType === 'HAT') scratchBlock.isEdgeActivated = false;
     return scratchBlock;
   }
+}
+
+/** `Name`, or `Name@version` for every version of a name defined more than once. */
+function schemaNames(schemas: readonly {name: string; version: string}[]): string[] {
+  const counts = new Map<string, number>();
+  for (const schema of schemas) counts.set(schema.name, (counts.get(schema.name) ?? 0) + 1);
+  const names = schemas.map((schema) => counts.get(schema.name)! > 1 ? `${schema.name}@${schema.version}` : schema.name);
+  return [...new Set(names)].sort();
 }
 
 /** ARGS text: empty means `{}`; otherwise it must be JSON. */

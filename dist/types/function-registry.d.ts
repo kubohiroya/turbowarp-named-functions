@@ -78,3 +78,9 @@ export declare function resolveFunction(functions: readonly FunctionDefinition[]
 /** Functions a script of `caller` can call: its sprite's own functions, then the global ones. */
 export declare function visibleFunctions(functions: readonly FunctionDefinition[], caller?: RuntimeTarget): FunctionDefinition[];
 export declare function toFunctionTools(functions: readonly FunctionDefinition[]): FunctionTool[];
+/**
+ * SCHEMA and RETURNS hold either JSON Schema text or, when the consumer supports it, the name of a
+ * `define schema` hat. Text that is not JSON is treated as a name, so existing JSON projects are
+ * unaffected.
+ */
+export declare function parseSchema(text: string, label: string, requireObjectType: boolean, options: FunctionScanOptions): Record<string, unknown>;

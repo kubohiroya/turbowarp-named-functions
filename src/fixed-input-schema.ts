@@ -2,9 +2,9 @@ import type {SchemaBundle} from '@kubohiroya/turbowarp-extension-data-editor/sch
 import document from '../schemas/block-editor-fixed-inputs.schema.json';
 
 /** The `define function` inputs the fixed-input editor changes. */
-export type FixedInputArgument = 'NAME' | 'SCOPE' | 'EXPORT';
+export type FixedInputArgument = 'NAME' | 'SCOPE' | 'EXPORT' | 'DESCRIPTION' | 'SCHEMA' | 'RETURNS';
 
-export const FIXED_INPUT_CONTRACT_REVISION = 'fixed-inputs-v2';
+export const FIXED_INPUT_CONTRACT_REVISION = 'fixed-inputs-v3';
 
 /** The on-disk owner Schema is canonical; each bundle is its single-field projection. */
 export function fixedInputSchemaBundle(argument: FixedInputArgument): SchemaBundle {

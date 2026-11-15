@@ -14,11 +14,19 @@ import type {FunctionScope} from '../src/function-registry.js';
 let taken: Array<{name: string; scope: FunctionScope}> = [];
 const conflicts = vi.fn((_where: {targetId: string; blockId: string}, name: string, scope: FunctionScope) =>
   taken.some((other) => other.name === name && (scope === 'global' || other.scope === 'global' || other.scope === scope)));
-const fixedInputEditorDefinitions = createFixedInputEditorDefinitions(conflicts);
+/** `define schema` names the SCHEMA and RETURNS inputs can use. */
+const schemaNames = {
+  list: () => ['Point'],
+  resolve: (reference: string, label: string) => {
+    if (reference !== 'Point') throw new Error(`${label} refers to unknown schema "${reference}"`);
+    return {type: 'object', properties: {x: {type: 'number'}}};
+  }
+};
+const fixedInputEditorDefinitions = createFixedInputEditorDefinitions(conflicts, schemaNames);
 const options = fixedInputEditorDefinitions[0]!;
 const argument = 'EXPORT';
 const opening = 'none';
-const retainedArguments: Record<string, string> = {"DESCRIPTION": " keep description ", "SCHEMA": "{ intentionally-not-parsed", "RETURNS": "[ untouched"};
+const retainedArguments: Record<string, string> = {"DESCRIPTION": " keep description ", "SCHEMA": "Point", "RETURNS": ""};
 const replacement = 'tool';
 const definition = () => createFixedInputEditor(options);
 afterEach(() => {
@@ -40,6 +48,8 @@ function fixture(raw = opening, reporter = false, name = 'sample', scope = 'spri
       generation: 'generation-1', dependencies: [{selector: 'SCOPE', dependents: ['NAME']}], readOnlyArguments: [], inputs: {
         NAME: {role: 'editable', source: 'shadow', identity: 'name-1', field: {blockId: 'name-shadow', name: 'TEXT', type: 'text'}},
         SCOPE: {role: 'editable', source: 'field', identity: 'scope-1', field: {blockId: 'owner-block', name: 'SCOPE', type: 'field_dropdown'}},
+        ...Object.fromEntries(Object.keys(retainedArguments).map((name) => [name,
+          {role: 'editable', source: 'shadow', identity: `${name}-1`, field: {blockId: `${name}-shadow`, name: 'TEXT', type: 'text'}}])),
         [argument]: reporter ? {role: 'editable', source: 'reporter', identity: 'reporter-1'}
           : {role: 'editable', source: 'field', identity: 'literal-1',
             field: {blockId: 'literal-block', name: 'EXPORT', type: 'field_dropdown'}}
@@ -59,13 +69,13 @@ function fixture(raw = opening, reporter = false, name = 'sample', scope = 'spri
 
 describe('fixed input owner contract', () => {
   it('compiles the on-disk canonical field and registers exactly the planned argument', () => {
-    for (const input of ['NAME', 'SCOPE', 'EXPORT'] as const) {
+    for (const input of ['NAME', 'SCOPE', 'EXPORT', 'DESCRIPTION', 'SCHEMA', 'RETURNS'] as const) {
       const bundle = fixedInputSchemaBundle(input);
       expect(compileSchemaBundle(bundle).kind).toBe('compiled');
       expect(bundle.root.artifact.role).toBe('canonical-schema');
       expect(bundle.provenance.canonicalSources[0]!.symbol).toContain(`/properties/${input}`);
     }
-    expect([...definition().editableArguments].sort()).toEqual(['EXPORT', 'NAME', 'SCOPE']);
+    expect([...definition().editableArguments].sort()).toEqual(['DESCRIPTION', 'EXPORT', 'NAME', 'RETURNS', 'SCHEMA', 'SCOPE']);
     expect(definition().readOnlyArguments).toEqual([]);
     expect(definition().opcodes).toEqual(options.opcodes);
   });
@@ -78,7 +88,8 @@ describe('fixed input owner contract', () => {
     f.remove();
   });
   it('commits only the explicitly selected literal through the fixed port', async () => {
-    const f = fixture();
+    // EXPORT `tool` needs all sprites.
+    const f = fixture(opening, false, 'sample', 'global');
     f.edit(replacement);
     expect(await f.session.save()).toEqual({status: 'saved', changed: true});
     expect(f.commits).toEqual([[{argument, value: replacement}]]);
@@ -182,7 +193,7 @@ describe('enum compatibility', () => {
     expect(await f.session.save()).toEqual({status: 'saved', changed: false});expect(f.commits).toEqual([]);f.remove();
   });
   it('repairs unknown raw only by an explicit canonical choice', async () => {
-    const f = fixture('future-enum');f.edit(replacement);
+    const f = fixture('future-enum', false, 'sample', 'global');f.edit(replacement);
     expect(await f.session.save()).toEqual({status: 'saved', changed: true});expect(f.commits).toEqual([[{argument, value: replacement}]]);f.remove();
   });
 });
@@ -259,4 +270,42 @@ it('keeps the docsURI landing-page block anchor linked to generated fixed-form h
   for (const input of ['NAME', 'SCOPE', 'EXPORT']) expect(article).toContain(input);
   expect(readFileSync(new URL('../site/schemas/block-editor-fixed-inputs.schema.json', import.meta.url), 'utf8'))
     .toBe(readFileSync(new URL('../schemas/block-editor-fixed-inputs.schema.json', import.meta.url), 'utf8'));
+});
+
+describe('description, schema, and returns', () => {
+  const draftValue = (f: ReturnType<typeof fixture>, input: string) =>
+    ((f.session.getDraft().inputs as JsonObject)[input] as {value: JsonValue}).value;
+
+  it('reads SCHEMA as a name or a parsed schema, and saves a schema as JSON text', async () => {
+    const f = fixture();
+    expect(draftValue(f, 'SCHEMA')).toBe('Point');
+    f.edit({type: 'object', properties: {a: {type: 'number'}}}, undefined, 'SCHEMA');
+    expect(await f.session.save()).toEqual({status: 'saved', changed: true});
+    expect(f.commits).toEqual([[{argument: 'SCHEMA', value: '{"type":"object","properties":{"a":{"type":"number"}}}'}]]);
+    f.remove();
+  });
+  it('refuses an unknown schema name and an args schema that is not an object type', async () => {
+    const f = fixture();
+    f.edit('Missing', undefined, 'SCHEMA');
+    expect((await f.session.save()).status).toBe('invalid');
+    f.edit({type: 'string'}, undefined, 'SCHEMA');
+    expect((await f.session.save()).status).toBe('invalid');
+    expect(f.commits).toEqual([]);f.remove();
+  });
+  it('lets RETURNS stay empty or name a schema', async () => {
+    const f = fixture();
+    expect(draftValue(f, 'RETURNS')).toBe('');
+    f.edit('Point', undefined, 'RETURNS');
+    expect(await f.session.save()).toEqual({status: 'saved', changed: true});
+    expect(f.commits).toEqual([[{argument: 'RETURNS', value: 'Point'}]]);f.remove();
+  });
+  it('refuses to export as a tool without a description, in the same save', async () => {
+    const f = fixture(opening, false, 'sample', 'global');
+    f.edit('  ', undefined, 'DESCRIPTION');f.edit(replacement);
+    expect((await f.session.save()).status).toBe('invalid');
+    f.edit('Adds two numbers', undefined, 'DESCRIPTION');
+    expect(await f.session.save()).toEqual({status: 'saved', changed: true});
+    expect(f.commits[0]).toEqual(expect.arrayContaining([{argument, value: replacement}, {argument: 'DESCRIPTION', value: 'Adds two numbers'}]));
+    f.remove();
+  });
 });
