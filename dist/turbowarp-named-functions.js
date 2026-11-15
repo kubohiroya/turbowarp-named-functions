@@ -401,7 +401,16 @@ var block_editor_fixed_inputs_schema_default = {
 			"EXPORT": {
 				"type": "string",
 				"enum": ["none", "tool"]
-			}
+			},
+			"DESCRIPTION": {
+				"type": "string",
+				"maxLength": 1024
+			},
+			"SCHEMA": { "anyOf": [{
+				"type": "string",
+				"minLength": 1
+			}, { "type": "object" }] },
+			"RETURNS": { "anyOf": [{ "type": "string" }, { "type": "object" }] }
 		},
 		"required": ["EXPORT"],
 		"additionalProperties": true
@@ -409,7 +418,7 @@ var block_editor_fixed_inputs_schema_default = {
 };
 //#endregion
 //#region src/fixed-input-schema.ts
-var FIXED_INPUT_CONTRACT_REVISION = "fixed-inputs-v2";
+var FIXED_INPUT_CONTRACT_REVISION = "fixed-inputs-v3";
 /** The on-disk owner Schema is canonical; each bundle is its single-field projection. */
 function fixedInputSchemaBundle(argument) {
 	const source = {
@@ -483,6 +492,91 @@ var choiceBinding = (argument, choices, labels) => ({
 		}];
 	}
 });
+var literalAt = (snapshot, name) => {
+	const slot = snapshot.arguments[name];
+	return slot?.kind === "literal" ? String(slot.value) : "";
+};
+/** EXPORT `tool` needs a description and `all sprites`, as `readDefinition` requires. */
+var exportBinding = () => {
+	const base = choiceBinding("EXPORT", exportChoices, {});
+	return {
+		...base,
+		validateCandidate(value, context, snapshot) {
+			const issues = base.validateCandidate(value, context, snapshot);
+			if (issues.length || value !== "tool") return issues;
+			if (snapshot.arguments.DESCRIPTION?.kind === "literal" && literalAt(snapshot, "DESCRIPTION").trim() === "") return [{
+				path: "/inputs/DESCRIPTION",
+				message: "A function exported as a tool needs a description."
+			}];
+			return literalAt(snapshot, "SCOPE") === "sprite" ? [{
+				path: "/inputs/SCOPE",
+				message: "A function exported as a tool must be for all sprites."
+			}] : [];
+		}
+	};
+};
+var descriptionBinding = () => ({
+	argument: "DESCRIPTION",
+	schemaBundle: fixedInputSchemaBundle("DESCRIPTION"),
+	control: {
+		kind: "text",
+		label: "DESCRIPTION"
+	},
+	read: literalString,
+	encode(value) {
+		if (typeof value !== "string") throw new TypeError("Expected a description.");
+		return value;
+	},
+	validateCandidate(value) {
+		return typeof value === "string" && value.trim().length <= 1024 ? [] : [{
+			path: "/inputs/DESCRIPTION",
+			message: `Descriptions are at most ${MAX_DESCRIPTION_LENGTH} characters.`
+		}];
+	}
+});
+/**
+* SCHEMA and RETURNS hold JSON Schema text or a schema name. The dialog value is the parsed object
+* for JSON text and the text itself otherwise, so a string always means a name.
+*/
+var schemaBinding = (argument, schemas) => {
+	const label = argument === "SCHEMA" ? "args schema" : "returns schema";
+	return {
+		argument,
+		schemaBundle: fixedInputSchemaBundle(argument),
+		control: {
+			kind: "json",
+			label: argument,
+			basic: "json-schema"
+		},
+		read(value) {
+			const text = literalString(value);
+			try {
+				const parsed = JSON.parse(text);
+				return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : text;
+			} catch {
+				return text;
+			}
+		},
+		encode(value) {
+			if (typeof value === "string") return value.trim();
+			if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError(`Unsupported ${argument}.`);
+			return JSON.stringify(value);
+		},
+		listNames: () => schemas.list(),
+		validateCandidate(value) {
+			if (argument === "RETURNS" && value === "") return [];
+			try {
+				parseSchema(typeof value === "string" ? value.trim() : JSON.stringify(value), label, argument === "SCHEMA", { resolveSchema: schemas.resolve });
+				return [];
+			} catch (error) {
+				return [{
+					path: `/inputs/${argument}`,
+					message: error instanceof Error ? error.message : String(error)
+				}];
+			}
+		}
+	};
+};
 /** NAME is checked against the other hats in the scope the dialog currently selects. */
 var nameBinding = (scope, conflicts) => ({
 	argument: "NAME",
@@ -511,11 +605,11 @@ var nameBinding = (scope, conflicts) => ({
 	}
 });
 /**
-* The `define function` dialog: NAME, SCOPE, and EXPORT. NAME is validated against the scope chosen
-* in the dialog, so a name already used in that scope disables Save. DESCRIPTION, SCHEMA, and RETURNS
-* are left to the block.
+* The `define function` dialog: every input in one save. NAME is validated against the scope chosen
+* in the dialog, so a name already used in that scope disables Save. SCHEMA and RETURNS are edited
+* by name, in a form, or as JSON text.
 */
-function createFixedInputEditorDefinitions(conflicts) {
+function createFixedInputEditorDefinitions(conflicts, schemas) {
 	return [{
 		apiVersion: 1,
 		extensionId: extensionConfig.id,
@@ -529,7 +623,10 @@ function createFixedInputEditorDefinitions(conflicts) {
 				global: "all sprites",
 				sprite: "this sprite only"
 			}),
-			choiceBinding("EXPORT", exportChoices, {})
+			descriptionBinding(),
+			schemaBinding("SCHEMA", schemas),
+			schemaBinding("RETURNS", schemas),
+			exportBinding()
 		],
 		dependencies: [{
 			selector: "SCOPE",
@@ -1989,6 +2086,9 @@ var NamedFunctionsExtension = class {
 					name,
 					scope
 				});
+			}, {
+				list: () => schemaNames(this.functions.schemas().schemas),
+				resolve: (reference, label) => resolveSchemaReference(this.functions.schemas().schemas, reference, label)
 			}), this.runtime));
 			removers.push(registerJsonInputEditors(scratch, jsonInputEditorDefinitions((targetId) => this.functions.visible(this.runtime.getTargetById?.(targetId))), this.runtime));
 		} catch (error) {
@@ -2040,6 +2140,13 @@ var NamedFunctionsExtension = class {
 		return scratchBlock;
 	}
 };
+/** `Name`, or `Name@version` for every version of a name defined more than once. */
+function schemaNames(schemas) {
+	const counts = /* @__PURE__ */ new Map();
+	for (const schema of schemas) counts.set(schema.name, (counts.get(schema.name) ?? 0) + 1);
+	const names = schemas.map((schema) => counts.get(schema.name) > 1 ? `${schema.name}@${schema.version}` : schema.name);
+	return [...new Set(names)].sort();
+}
 /** ARGS text: empty means `{}`; otherwise it must be JSON. */
 function parseArguments(text) {
 	if (text.trim().length === 0) return {};

@@ -39,7 +39,7 @@ describe('JSON input editors', () => {
 
   it('registers next to the fixed-input editor in a real registry', () => {
     const registry = new EditorRegistry();
-    registry.registerFixed(createFixedInputEditor(createFixedInputEditorDefinitions(() => false)[0]!));
+    registry.registerFixed(createFixedInputEditor(createFixedInputEditorDefinitions(() => false, {list: () => [], resolve: () => ({})})[0]!));
     for (const definition of jsonInputEditorDefinitions(functions)) {
       registry.register(createSchemaBundleEditor(definition));
     }
