@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-named-functions",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Named, JSON-in/JSON-out functions for TurboWarp that can be called by name, synchronously or asynchronously, and exported as tools.",
   "author": {
     "name": "Hiroya Kubo",
@@ -85,5 +85,11 @@
     },
     "./turbowarp-named-functions.js": "./dist/turbowarp-named-functions.js",
     "./package.json": "./package.json"
+  },
+  "turbowarpExtension": {
+    "resourceDeclaration": {
+      "schemaVersion": 1,
+      "resources": []
+    }
   }
 }
